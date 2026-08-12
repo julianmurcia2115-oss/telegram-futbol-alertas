@@ -1,9 +1,10 @@
 import os
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 API_KEY = os.environ["API_FOOTBALL_KEY"]
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 API_URL = "https://v3.football.api-sports.io"
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -12,114 +13,145 @@ HEADERS = {
     "x-apisports-key": API_KEY
 }
 
+session = requests.Session()
+session.headers.update(HEADERS)
 
-def telegram(method, params=None):
-    response = requests.post(
-        f"{TELEGRAM_URL}/{method}",
-        data=params or {},
-        timeout=30
-    )
-    return response.json()
+# Evita pedir los mismos datos varias veces
+team_cache = {}
 
 
-def send_message(chat_id, text):
-    telegram("sendMessage", {
-        "chat_id": chat_id,
-        "text": text
-    })
-
-
-def get_chat_id():
-    data = telegram("getUpdates")
-
-    if not data.get("ok"):
-        print("Error obteniendo mensajes de Telegram")
-        return None
-
-    updates = data.get("result", [])
-
-    if not updates:
-        return None
-
-    for update in reversed(updates):
-        message = update.get("message")
-
-        if message:
-            return message["chat"]["id"]
-
-    return None
-
-
-def get_today_fixtures():
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    response = requests.get(
-        f"{API_URL}/fixtures",
-        headers=HEADERS,
-        params={"date": today},
+def api_get(endpoint, params):
+    response = session.get(
+        f"{API_URL}/{endpoint}",
+        params=params,
         timeout=30
     )
 
     response.raise_for_status()
 
-    return response.json().get("response", [])
+    data = response.json()
+
+    if data.get("errors"):
+        print("Error API:", data["errors"])
+
+    return data.get("response", [])
 
 
-def get_team_last_19(team_id):
+def telegram_send(text):
+    if not CHAT_ID:
+        print("TELEGRAM_CHAT_ID no configurado.")
+        return
 
-    response = requests.get(
-        f"{API_URL}/fixtures",
-        headers=HEADERS,
-        params={
-            "team": team_id,
-            "last": 19
+    response = requests.post(
+        f"{TELEGRAM_URL}/sendMessage",
+        data={
+            "chat_id": CHAT_ID,
+            "text": text
         },
         timeout=30
     )
 
-    response.raise_for_status()
+    if not response.ok:
+        print("Error Telegram:", response.text)
 
-    return response.json().get("response", [])
+
+def get_fixtures_tomorrow():
+
+    tomorrow = (
+        datetime.now(timezone.utc)
+        + timedelta(days=1)
+    ).strftime("%Y-%m-%d")
+
+    print(f"Buscando partidos del: {tomorrow}")
+
+    return api_get(
+        "fixtures",
+        {
+            "date": tomorrow
+        }
+    )
 
 
-def calculate_stats(fixtures, team_id):
+def get_last_10(team_id):
+
+    if team_id in team_cache:
+        return team_cache[team_id]
+
+    fixtures = api_get(
+        "fixtures",
+        {
+            "team": team_id,
+            "last": 10
+        }
+    )
+
+    team_cache[team_id] = fixtures
+
+    return fixtures
+
+
+def get_team_stats(team_id):
+
+    fixtures = get_last_10(team_id)
 
     total = 0
+
     btts = 0
+    over25 = 0
+    halftime_draw = 0
+
     scored = 0
     conceded = 0
 
     for fixture in fixtures:
 
-        home_id = fixture["teams"]["home"]["id"]
-        away_id = fixture["teams"]["away"]["id"]
+        goals = fixture.get("goals", {})
+        score = fixture.get("score", {})
 
-        home_goals = fixture["goals"]["home"]
-        away_goals = fixture["goals"]["away"]
+        home_goals = goals.get("home")
+        away_goals = goals.get("away")
 
-        if home_goals is None or away_goals is None:
+        halftime = score.get("halftime", {})
+
+        ht_home = halftime.get("home")
+        ht_away = halftime.get("away")
+
+        if (
+            home_goals is None
+            or away_goals is None
+            or ht_home is None
+            or ht_away is None
+        ):
             continue
 
-        if team_id == home_id:
+        home_id = fixture["teams"]["home"]["id"]
 
+        if team_id == home_id:
             team_goals = home_goals
             opponent_goals = away_goals
-
         else:
-
             team_goals = away_goals
             opponent_goals = home_goals
 
         total += 1
+
+        # Ambos marcan
+        if team_goals > 0 and opponent_goals > 0:
+            btts += 1
+
+        # Más de 2.5
+        if home_goals + away_goals > 2:
+            over25 += 1
+
+        # Empate al descanso
+        if ht_home == ht_away:
+            halftime_draw += 1
 
         if team_goals > 0:
             scored += 1
 
         if opponent_goals > 0:
             conceded += 1
-
-        if team_goals > 0 and opponent_goals > 0:
-            btts += 1
 
     if total == 0:
         return None
@@ -128,38 +160,35 @@ def calculate_stats(fixtures, team_id):
         "total": total,
         "btts": btts,
         "btts_pct": btts / total * 100,
+        "over25": over25,
+        "over25_pct": over25 / total * 100,
+        "ht_draw": halftime_draw,
+        "ht_draw_pct": halftime_draw / total * 100,
         "scored_pct": scored / total * 100,
         "conceded_pct": conceded / total * 100
     }
 
 
+def combined_percentage(a, b):
+
+    return (a + b) / 2
+
+
 def main():
 
-    print("====================================")
-    print("     MONITOR BTTS - PRUEBA")
-    print("====================================")
+    print("========================================")
+    print("       BOT DE ALERTAS FUTBOL")
+    print("========================================")
 
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    fixtures = get_fixtures_tomorrow()
 
-    if not chat_id:
-        chat_id = get_chat_id()
-
-    if not chat_id:
-
-        print("")
-        print("No se encontró CHAT ID de Telegram.")
-        print("Envía /start al bot y vuelve a ejecutar.")
-        print("")
-
-    fixtures = get_today_fixtures()
-
-    print(f"Partidos encontrados: {len(fixtures)}")
-    print("Analizando los primeros 20...")
-    print("")
+    print(
+        f"Partidos encontrados: {len(fixtures)}"
+    )
 
     alerts = 0
 
-    for fixture in fixtures[:20]:
+    for fixture in fixtures:
 
         status = fixture["fixture"]["status"]["short"]
 
@@ -176,111 +205,153 @@ def main():
         home = fixture["teams"]["home"]
         away = fixture["teams"]["away"]
 
-        print("------------------------------------")
-        print(f"{home['name']} vs {away['name']}")
+        print(
+            f"\nAnalizando: "
+            f"{home['name']} vs {away['name']}"
+        )
 
-        home_last = get_team_last_19(home["id"])
-        away_last = get_team_last_19(away["id"])
-
-        home_stats = calculate_stats(
-            home_last,
+        home_stats = get_team_stats(
             home["id"]
         )
 
-        away_stats = calculate_stats(
-            away_last,
+        away_stats = get_team_stats(
             away["id"]
         )
 
         if not home_stats or not away_stats:
-
-            print("Sin suficientes datos")
+            print("Sin suficientes estadísticas.")
             continue
-
-        print(
-            f"{home['name']} - "
-            f"BTTS últimos {home_stats['total']}: "
-            f"{home_stats['btts_pct']:.1f}%"
-        )
-
-        print(
-            f"{away['name']} - "
-            f"BTTS últimos {away_stats['total']}: "
-            f"{away_stats['btts_pct']:.1f}%"
-        )
 
         if (
-            home_stats["total"] < 19
-            or away_stats["total"] < 19
+            home_stats["total"] < 10
+            or away_stats["total"] < 10
         ):
-
-            print("No tiene 19 partidos completos")
+            print("No hay 10 partidos válidos.")
             continue
 
-        combined = (
-            home_stats["btts_pct"]
-            + away_stats["btts_pct"]
-        ) / 2
+        alerts_found = []
 
-        print(
-            f"INDICADOR COMBINADO: "
-            f"{combined:.1f}%"
+        # ==============================
+        # BTTS
+        # ==============================
+
+        btts_probability = combined_percentage(
+            home_stats["btts_pct"],
+            away_stats["btts_pct"]
         )
 
-        if combined >= 90:
+        if btts_probability > 70:
 
-            level = "🔴 NIVEL 3"
+            alerts_found.append(
+                f"⚽ AMBOS MARCAN: "
+                f"{btts_probability:.1f}%"
+            )
 
-        elif combined >= 80:
+        # ==============================
+        # OVER 2.5
+        # ==============================
 
-            level = "🟠 NIVEL 2"
+        over25_probability = combined_percentage(
+            home_stats["over25_pct"],
+            away_stats["over25_pct"]
+        )
 
-        elif combined >= 70:
+        if over25_probability > 70:
 
-            level = "🟢 NIVEL 1"
+            alerts_found.append(
+                f"🔥 MÁS DE 2.5 GOLES: "
+                f"{over25_probability:.1f}%"
+            )
 
-        else:
+        # ==============================
+        # EMPATE PRIMER TIEMPO
+        # ==============================
 
-            print("NO ALERTA")
+        halftime_probability = combined_percentage(
+            home_stats["ht_draw_pct"],
+            away_stats["ht_draw_pct"]
+        )
+
+        if halftime_probability > 70:
+
+            alerts_found.append(
+                f"🤝 EMPATE 1ER TIEMPO: "
+                f"{halftime_probability:.1f}%"
+            )
+
+        # ==============================
+        # SI NO CUMPLE NINGUNA REGLA
+        # ==============================
+
+        if not alerts_found:
+
+            print("Sin alerta.")
+
             continue
 
-        print(f"ALERTA: {level}")
+        alerts += 1
+
+        match_date = fixture["fixture"]["date"]
 
         message = f"""
-🚨 ALERTA BTTS
-
-{level}
+🚨 ALERTA ESTADÍSTICA 🚨
 
 ⚽ {home['name']} vs {away['name']}
 
-📊 Últimos 19 partidos
+🏆 {fixture['league']['name']}
+
+🗓️ {match_date}
+
+📊 ÚLTIMOS 10 PARTIDOS
 
 🏠 {home['name']}
-BTTS: {home_stats['btts_pct']:.1f}%
+
+⚽ BTTS:
+{home_stats['btts_pct']:.1f}%
+
+🔥 Over 2.5:
+{home_stats['over25_pct']:.1f}%
+
+🤝 Empate 1er tiempo:
+{home_stats['ht_draw_pct']:.1f}%
+
 
 ✈️ {away['name']}
-BTTS: {away_stats['btts_pct']:.1f}%
 
-📈 Indicador combinado:
-{combined:.1f}%
+⚽ BTTS:
+{away_stats['btts_pct']:.1f}%
 
-⚠️ Indicador estadístico.
-No garantiza el resultado.
+🔥 Over 2.5:
+{away_stats['over25_pct']:.1f}%
+
+🤝 Empate 1er tiempo:
+{away_stats['ht_draw_pct']:.1f}%
+
+
+🎯 PATRONES DETECTADOS
+
 """
 
-        if chat_id:
+        for alert in alerts_found:
 
-            send_message(
-                chat_id,
-                message
-            )
+            message += f"✅ {alert}\n"
 
-            alerts += 1
+        message += """
 
-    print("")
-    print("====================================")
-    print(f"Alertas enviadas: {alerts}")
-    print("====================================")
+📌 Indicadores basados en los últimos
+10 partidos disponibles.
+
+⚠️ Estadística histórica, no garantía
+de resultado.
+"""
+
+        print(message)
+
+        telegram_send(message)
+
+    print("\n========================================")
+    print(f"ALERTAS ENVIADAS: {alerts}")
+    print("========================================")
 
 
 if __name__ == "__main__":
