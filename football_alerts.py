@@ -33,7 +33,7 @@ def get_chat_id():
     data = telegram("getUpdates")
 
     if not data.get("ok"):
-        print("Error obteniendo mensajes de Telegram:", data)
+        print("Error obteniendo mensajes de Telegram")
         return None
 
     updates = data.get("result", [])
@@ -61,10 +61,12 @@ def get_today_fixtures():
     )
 
     response.raise_for_status()
+
     return response.json().get("response", [])
 
 
 def get_team_last_19(team_id):
+
     response = requests.get(
         f"{API_URL}/fixtures",
         headers=HEADERS,
@@ -76,16 +78,19 @@ def get_team_last_19(team_id):
     )
 
     response.raise_for_status()
+
     return response.json().get("response", [])
 
 
-def calculate_btts(fixtures, team_id):
+def calculate_stats(fixtures, team_id):
+
     total = 0
     btts = 0
     scored = 0
     conceded = 0
 
     for fixture in fixtures:
+
         home_id = fixture["teams"]["home"]["id"]
         away_id = fixture["teams"]["away"]["id"]
 
@@ -96,9 +101,12 @@ def calculate_btts(fixtures, team_id):
             continue
 
         if team_id == home_id:
+
             team_goals = home_goals
             opponent_goals = away_goals
+
         else:
+
             team_goals = away_goals
             opponent_goals = home_goals
 
@@ -120,26 +128,16 @@ def calculate_btts(fixtures, team_id):
         "total": total,
         "btts": btts,
         "btts_pct": btts / total * 100,
-        "scored": scored,
         "scored_pct": scored / total * 100,
-        "conceded": conceded,
         "conceded_pct": conceded / total * 100
     }
 
 
-def level(value):
-    if value >= 90:
-        return "🔴 NIVEL 3"
-    elif value >= 80:
-        return "🟠 NIVEL 2"
-    elif value >= 70:
-        return "🟢 NIVEL 1"
-
-    return None
-
-
 def main():
-    print("Iniciando monitor BTTS...")
+
+    print("====================================")
+    print("     MONITOR BTTS - PRUEBA")
+    print("====================================")
 
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -147,86 +145,142 @@ def main():
         chat_id = get_chat_id()
 
     if not chat_id:
-        print("No se encontró un chat de Telegram.")
-        print("Envía /start al bot y vuelve a ejecutar el programa.")
-        return
+
+        print("")
+        print("No se encontró CHAT ID de Telegram.")
+        print("Envía /start al bot y vuelve a ejecutar.")
+        print("")
 
     fixtures = get_today_fixtures()
 
     print(f"Partidos encontrados: {len(fixtures)}")
+    print("Analizando los primeros 20...")
+    print("")
 
     alerts = 0
 
-    for fixture in fixtures:
+    for fixture in fixtures[:20]:
 
         status = fixture["fixture"]["status"]["short"]
 
-        # Solo analizar partidos que todavía no hayan terminado
-        if status in ["FT", "AET", "PEN", "CANC", "PST", "ABD"]:
+        if status in [
+            "FT",
+            "AET",
+            "PEN",
+            "CANC",
+            "PST",
+            "ABD"
+        ]:
             continue
 
         home = fixture["teams"]["home"]
         away = fixture["teams"]["away"]
 
+        print("------------------------------------")
+        print(f"{home['name']} vs {away['name']}")
+
         home_last = get_team_last_19(home["id"])
         away_last = get_team_last_19(away["id"])
 
-        home_stats = calculate_btts(home_last, home["id"])
-        away_stats = calculate_btts(away_last, away["id"])
+        home_stats = calculate_stats(
+            home_last,
+            home["id"]
+        )
+
+        away_stats = calculate_stats(
+            away_last,
+            away["id"]
+        )
 
         if not home_stats or not away_stats:
+
+            print("Sin suficientes datos")
             continue
 
-        # Exigir 19 partidos válidos
-        if home_stats["total"] < 19 or away_stats["total"] < 19:
+        print(
+            f"{home['name']} - "
+            f"BTTS últimos {home_stats['total']}: "
+            f"{home_stats['btts_pct']:.1f}%"
+        )
+
+        print(
+            f"{away['name']} - "
+            f"BTTS últimos {away_stats['total']}: "
+            f"{away_stats['btts_pct']:.1f}%"
+        )
+
+        if (
+            home_stats["total"] < 19
+            or away_stats["total"] < 19
+        ):
+
+            print("No tiene 19 partidos completos")
             continue
 
         combined = (
-            home_stats["btts_pct"] +
-            away_stats["btts_pct"]
+            home_stats["btts_pct"]
+            + away_stats["btts_pct"]
         ) / 2
 
-        alert_level = level(combined)
+        print(
+            f"INDICADOR COMBINADO: "
+            f"{combined:.1f}%"
+        )
 
-        if not alert_level:
+        if combined >= 90:
+
+            level = "🔴 NIVEL 3"
+
+        elif combined >= 80:
+
+            level = "🟠 NIVEL 2"
+
+        elif combined >= 70:
+
+            level = "🟢 NIVEL 1"
+
+        else:
+
+            print("NO ALERTA")
             continue
 
-        fixture_time = fixture["fixture"]["date"]
+        print(f"ALERTA: {level}")
 
         message = f"""
-🚨 ALERTA ESTADÍSTICA BTTS
+🚨 ALERTA BTTS
 
-{alert_level}
+{level}
 
-⚽ {home["name"]} vs {away["name"]}
+⚽ {home['name']} vs {away['name']}
 
-🏆 {fixture["league"]["name"]}
+📊 Últimos 19 partidos
 
-🕐 {fixture_time}
+🏠 {home['name']}
+BTTS: {home_stats['btts_pct']:.1f}%
 
-📊 ÚLTIMOS 19 PARTIDOS
+✈️ {away['name']}
+BTTS: {away_stats['btts_pct']:.1f}%
 
-🏠 {home["name"]}
-BTTS: {home_stats["btts"]}/19 ({home_stats["btts_pct"]:.1f}%)
-Marcó: {home_stats["scored"]}/19 ({home_stats["scored_pct"]:.1f}%)
-Recibió gol: {home_stats["conceded"]}/19 ({home_stats["conceded_pct"]:.1f}%)
-
-✈️ {away["name"]}
-BTTS: {away_stats["btts"]}/19 ({away_stats["btts_pct"]:.1f}%)
-Marcó: {away_stats["scored"]}/19 ({away_stats["scored_pct"]:.1f}%)
-Recibió gol: {away_stats["conceded"]}/19 ({away_stats["conceded_pct"]:.1f}%)
-
-📈 INDICADOR COMBINADO
+📈 Indicador combinado:
 {combined:.1f}%
 
-⚠️ Indicador estadístico. No garantiza el resultado.
+⚠️ Indicador estadístico.
+No garantiza el resultado.
 """
 
-        send_message(chat_id, message)
+        if chat_id:
 
-        alerts += 1
+            send_message(
+                chat_id,
+                message
+            )
 
+            alerts += 1
+
+    print("")
+    print("====================================")
     print(f"Alertas enviadas: {alerts}")
+    print("====================================")
 
 
 if __name__ == "__main__":
