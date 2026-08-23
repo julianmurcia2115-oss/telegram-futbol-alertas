@@ -3,15 +3,13 @@ import re
 import json
 import base64
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-FOOTBALL_DATA_API_KEY = os.environ.get("FOOTBALL_DATA_API_KEY", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "")
 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
-FOOTBALL_URL = "https://footballdata.io/api/v1"
 
 SIGNALS_FILE = "signals.json"
 OFFSET_FILE = "telegram_offset.json"
@@ -42,16 +40,20 @@ def github_get_file(filename):
     )
 
     try:
-        r = requests.get(
+        response = requests.get(
             url,
             headers=github_headers(),
             timeout=30
         )
 
-        if not r.ok:
+        if not response.ok:
+            print(
+                "GitHub GET error:",
+                response.status_code
+            )
             return None, None
 
-        data = r.json()
+        data = response.json()
 
         content = base64.b64decode(
             data["content"]
@@ -60,11 +62,20 @@ def github_get_file(filename):
         return content, data.get("sha")
 
     except Exception as e:
-        print("Error GitHub:", e)
+
+        print(
+            "Error leyendo GitHub:",
+            e
+        )
+
         return None, None
 
 
-def github_save_file(filename, content, message):
+def github_save_file(
+    filename,
+    content,
+    message
+):
 
     if not GITHUB_TOKEN or not GITHUB_REPOSITORY:
         return False
@@ -76,7 +87,7 @@ def github_save_file(filename, content, message):
 
     try:
 
-        old_content, sha = github_get_file(
+        _, sha = github_get_file(
             filename
         )
 
@@ -92,22 +103,25 @@ def github_save_file(filename, content, message):
         if sha:
             payload["sha"] = sha
 
-        r = requests.put(
+        response = requests.put(
             url,
             headers=github_headers(),
             json=payload,
             timeout=30
         )
 
-        if r.ok:
-            print(f"{filename} guardado.")
+        if response.ok:
+
+            print(
+                f"{filename} actualizado."
+            )
+
             return True
 
         print(
-            "Error guardando:",
-            filename,
-            r.status_code,
-            r.text
+            "Error GitHub:",
+            response.status_code,
+            response.text
         )
 
         return False
@@ -115,7 +129,7 @@ def github_save_file(filename, content, message):
     except Exception as e:
 
         print(
-            "Error GitHub:",
+            "Error guardando GitHub:",
             e
         )
 
@@ -136,10 +150,13 @@ def load_signals():
 
         try:
             return json.loads(content)
+
         except Exception:
             pass
 
-    if os.path.exists(SIGNALS_FILE):
+    if os.path.exists(
+        SIGNALS_FILE
+    ):
 
         try:
 
@@ -147,9 +164,9 @@ def load_signals():
                 SIGNALS_FILE,
                 "r",
                 encoding="utf-8"
-            ) as f:
+            ) as file:
 
-                return json.load(f)
+                return json.load(file)
 
         except Exception:
             pass
@@ -169,9 +186,9 @@ def save_signals(signals):
         SIGNALS_FILE,
         "w",
         encoding="utf-8"
-    ) as f:
+    ) as file:
 
-        f.write(content)
+        file.write(content)
 
     github_save_file(
         SIGNALS_FILE,
@@ -194,7 +211,9 @@ def load_offset():
 
         try:
 
-            data = json.loads(content)
+            data = json.loads(
+                content
+            )
 
             return data.get(
                 "offset"
@@ -203,7 +222,9 @@ def load_offset():
         except Exception:
             pass
 
-    if os.path.exists(OFFSET_FILE):
+    if os.path.exists(
+        OFFSET_FILE
+    ):
 
         try:
 
@@ -211,9 +232,11 @@ def load_offset():
                 OFFSET_FILE,
                 "r",
                 encoding="utf-8"
-            ) as f:
+            ) as file:
 
-                data = json.load(f)
+                data = json.load(
+                    file
+                )
 
                 return data.get(
                     "offset"
@@ -238,14 +261,14 @@ def save_offset(offset):
         OFFSET_FILE,
         "w",
         encoding="utf-8"
-    ) as f:
+    ) as file:
 
-        f.write(content)
+        file.write(content)
 
     github_save_file(
         OFFSET_FILE,
         content,
-        "Actualizar offset Telegram"
+        "Actualizar Telegram offset"
     )
 
 
@@ -253,11 +276,14 @@ def save_offset(offset):
 # TELEGRAM
 # ============================================================
 
-def send_message(chat_id, text):
+def send_message(
+    chat_id,
+    text
+):
 
     try:
 
-        r = requests.post(
+        response = requests.post(
             f"{TELEGRAM_URL}/sendMessage",
             data={
                 "chat_id": chat_id,
@@ -266,12 +292,23 @@ def send_message(chat_id, text):
             timeout=30
         )
 
-        return r.ok
+        print(
+            "Telegram respuesta:",
+            response.status_code
+        )
+
+        if not response.ok:
+
+            print(
+                response.text
+            )
+
+        return response.ok
 
     except Exception as e:
 
         print(
-            "Telegram error:",
+            "Error enviando Telegram:",
             e
         )
 
@@ -286,22 +323,25 @@ def get_updates(offset=None):
     }
 
     if offset is not None:
+
         params["offset"] = offset
 
     try:
 
-        r = requests.get(
+        response = requests.get(
             f"{TELEGRAM_URL}/getUpdates",
             params=params,
             timeout=15
         )
 
-        data = r.json()
+        data = response.json()
 
-        if not data.get("ok"):
+        if not data.get(
+            "ok"
+        ):
 
             print(
-                "Telegram:",
+                "Error Telegram:",
                 data
             )
 
@@ -323,85 +363,76 @@ def get_updates(offset=None):
 
 
 # ============================================================
-# EXTRACCION
+# EXTRACCIÓN
 # ============================================================
 
 def extract(
     text,
-    pattern,
+    patterns,
     default="No identificado"
 ):
 
-    match = re.search(
-        pattern,
-        text,
-        re.IGNORECASE
-    )
+    if isinstance(
+        patterns,
+        str
+    ):
 
-    if match:
+        patterns = [
+            patterns
+        ]
 
-        return match.group(
-            1
-        ).strip()
+    for pattern in patterns:
+
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE
+        )
+
+        if match:
+
+            return match.group(
+                1
+            ).strip()
 
     return default
 
 
 def extract_strategy(text):
 
-    value = extract(
+    strategy = extract(
         text,
-        r"Estrategia\s*:\s*(.+)",
+        [
+            r"ESTRATEGIA\s*:\s*(.+)",
+            r"Estrategia\s*:\s*(.+)",
+            r"RESULTADO DESEADO\s*:\s*(.+)",
+            r"Resultado deseado\s*:\s*(.+)"
+        ],
         ""
     )
 
-    if value:
-        return value
+    if strategy:
+        return strategy
 
-    value = extract(
-        text,
-        r"Resultado\s*deseado\s*:\s*(.+)",
-        ""
-    )
+    lower = text.lower()
 
-    if value:
-        return value
-
-    low = text.lower()
-
-    if (
-        "más de 3.5" in low
-        or
-        "over 3.5" in low
-    ):
+    if "más de 3.5" in lower:
         return "Más de 3.5 goles"
 
-    if (
-        "más de 2.5" in low
-        or
-        "over 2.5" in low
-    ):
+    if "más de 2.5" in lower:
         return "Más de 2.5 goles"
 
     if (
-        "ambos marcan" in low
+        "ambos marcan" in lower
         or
-        "btts" in low
+        "btts" in lower
     ):
         return "Ambos Marcan"
 
-    if (
-        "victoria local" in low
-        or
-        "local gana" in low
-    ):
+    if "victoria local" in lower:
         return "Victoria Local"
 
-    if (
-        "victoria visitante" in low
-        or
-        "visitante gana" in low
-    ):
+    if "victoria visitante" in lower:
         return "Victoria Visitante"
 
     return "SIN ESTRATEGIA"
@@ -409,36 +440,36 @@ def extract_strategy(text):
 
 def extract_odds(text):
 
-    patterns = [
-        r"Cuota\s*:\s*([\d.,]+)",
-        r"bet365\s*:\s*([\d.,]+)",
-        r"Odds\s*:\s*([\d.,]+)"
-    ]
+    value = extract(
+        text,
+        [
+            r"CUOTA\s*:\s*([\d.,]+)",
+            r"Cuota\s*:\s*([\d.,]+)",
+            r"bet365\s*:\s*([\d.,]+)",
+            r"ODDS\s*:\s*([\d.,]+)"
+        ],
+        ""
+    )
 
-    for pattern in patterns:
+    if not value:
+        return None
 
-        value = extract(
-            text,
-            pattern,
-            ""
+    try:
+
+        return float(
+            value.replace(
+                ",",
+                "."
+            )
         )
 
-        if value:
+    except Exception:
 
-            try:
-
-                return float(
-                    value.replace(",", ".")
-                )
-
-            except Exception:
-                pass
-
-    return None
+        return None
 
 
 # ============================================================
-# DETECTAR SI ES UNA ALERTA
+# DETECTAR SEÑAL
 # ============================================================
 
 def is_bet_alert(text):
@@ -446,46 +477,40 @@ def is_bet_alert(text):
     if not text:
         return False
 
-    commands = [
-        "/start",
-        "/panel",
-        "/hoy",
-        "/semana",
-        "/mes",
-        "/calendario",
-        "/estrategias",
-        "/pendientes",
-        "/ganada",
-        "/perdida"
-    ]
+    clean = text.strip()
 
-    first = text.split()[0].lower()
-
-    if first in commands:
+    # Nunca tratar comandos como señales
+    if clean.startswith("/"):
         return False
 
-    alert_words = [
-        "liga",
-        "partido",
-        "resultado deseado",
-        "estrategia",
-        "betmines",
-        "success",
-        "roi",
-        "picks",
-        "ranking",
+    lower = clean.lower()
+
+    keywords = [
+
+        "liga:",
+        "partido:",
+        "fecha:",
+        "estrategia:",
+        "resultado deseado:",
+        "cuota:",
+        "success betmines:",
+        "roi betmines:",
+        "picks:",
+        "ranking:",
+
         "🏆",
         "🆚",
         "🗓"
     ]
 
-    found = sum(
-        1
-        for word in alert_words
-        if word.lower() in text.lower()
-    )
+    matches = 0
 
-    return found >= 1
+    for keyword in keywords:
+
+        if keyword in lower:
+            matches += 1
+
+    return matches >= 2
 
 
 # ============================================================
@@ -511,19 +536,28 @@ def register_signal(text):
         "league":
             extract(
                 text,
-                r"(?:🏆\s*|LIGA\s*:\s*)(.+)"
+                [
+                    r"LIGA\s*:\s*(.+)",
+                    r"🏆\s*(.+)"
+                ]
             ),
 
         "match":
             extract(
                 text,
-                r"(?:🆚\s*|PARTIDO\s*:\s*)(.+)"
+                [
+                    r"PARTIDO\s*:\s*(.+)",
+                    r"🆚\s*(.+)"
+                ]
             ),
 
         "date":
             extract(
                 text,
-                r"(?:🗓\s*|FECHA\s*:\s*)(.+)"
+                [
+                    r"FECHA\s*:\s*(.+)",
+                    r"🗓\s*(.+)"
+                ]
             ),
 
         "strategy":
@@ -557,43 +591,66 @@ def register_signal(text):
 
 
 # ============================================================
-# PANEL
+# ESTADÍSTICAS
 # ============================================================
 
-def calculate_stats(signals):
+def calculate_stats(
+    signals
+):
 
-    won = sum(
-        1
-        for s in signals
-        if s.get("result") == "GANADA"
-    )
+    won = 0
+    lost = 0
+    pending = 0
+    profit = 0
 
-    lost = sum(
-        1
-        for s in signals
-        if s.get("result") == "PERDIDA"
-    )
+    for signal in signals:
 
-    pending = sum(
-        1
-        for s in signals
-        if s.get("result") == "PENDIENTE"
-    )
+        result = signal.get(
+            "result",
+            "PENDIENTE"
+        )
+
+        if result == "GANADA":
+
+            won += 1
+
+            odds = signal.get(
+                "odds"
+            )
+
+            if odds:
+
+                profit += (
+                    BET_AMOUNT
+                    *
+                    (
+                        odds - 1
+                    )
+                )
+
+            else:
+
+                profit += BET_AMOUNT
+
+        elif result == "PERDIDA":
+
+            lost += 1
+
+            profit -= BET_AMOUNT
+
+        else:
+
+            pending += 1
 
     finished = won + lost
 
     effectiveness = (
-        won / finished * 100
-        if finished
-        else 0
-    )
 
-    profit = sum(
-        s.get(
-            "profit",
-            0
-        )
-        for s in signals
+        won / finished * 100
+
+        if finished
+
+        else 0
     )
 
     return (
@@ -605,6 +662,10 @@ def calculate_stats(signals):
         profit
     )
 
+
+# ============================================================
+# PANEL GENERAL
+# ============================================================
 
 def panel():
 
@@ -622,31 +683,37 @@ def panel():
     )
 
     return f"""
-╔══════════════════════════╗
-║     APUESTASMURCIA       ║
-║       DASHBOARD          ║
-╚══════════════════════════╝
+╔════════════════════════════╗
+║     APUESTASMURCIA         ║
+║        DASHBOARD           ║
+╚════════════════════════════╝
 
-💵 APUESTA FIJA:
+💵 APUESTA FIJA
 $5.000 COP
 
-📥 SEÑALES: {total}
+📥 SEÑALES
+{total}
 
-✅ GANADAS: {won}
-❌ PERDIDAS: {lost}
-⏳ PENDIENTES: {pending}
+✅ GANADAS
+{won}
 
-🎯 EFECTIVIDAD:
+❌ PERDIDAS
+{lost}
+
+⏳ PENDIENTES
+{pending}
+
+🎯 EFECTIVIDAD
 {effectiveness:.1f}%
 
-💰 GANANCIA:
+💰 GANANCIA
 ${profit:,.0f} COP
 
 ━━━━━━━━━━━━━━━━━━━━
 
 📅 /hoy
 📆 /semana
-🗓️ /mes
+🗓 /mes
 📅 /calendario
 🎯 /estrategias
 ⏳ /pendientes
@@ -671,16 +738,27 @@ def strategies_panel():
         )
 
         if strategy not in strategies:
-            strategies[strategy] = []
 
-        strategies[strategy].append(
+            strategies[
+                strategy
+            ] = []
+
+        strategies[
+            strategy
+        ].append(
             signal
         )
 
+    if not strategies:
+
+        return (
+            "🎯 No hay estrategias registradas."
+        )
+
     output = """
-╔══════════════════════════╗
-║   🎯 ESTRATEGIAS         ║
-╚══════════════════════════╝
+╔════════════════════════════╗
+║    🎯 POR ESTRATEGIA       ║
+╚════════════════════════════╝
 """
 
     for strategy, items in strategies.items():
@@ -726,8 +804,14 @@ def pending_panel():
     signals = load_signals()
 
     pending = [
-        s for s in signals
-        if s.get("result") == "PENDIENTE"
+
+        signal
+
+        for signal in signals
+
+        if signal.get(
+            "result"
+        ) == "PENDIENTE"
     ]
 
     if not pending:
@@ -737,9 +821,9 @@ def pending_panel():
         )
 
     output = """
-╔══════════════════════════╗
-║    ⏳ PENDIENTES         ║
-╚══════════════════════════╝
+╔════════════════════════════╗
+║       ⏳ PENDIENTES         ║
+╚════════════════════════════╝
 """
 
     for signal in pending:
@@ -766,49 +850,423 @@ def pending_panel():
 
 
 # ============================================================
-# PROCESAR COMANDOS
+# HOY
 # ============================================================
 
-def process_message(message):
+def today_panel():
 
-    chat_id = message[
-        "chat"
-    ]["id"]
+    signals = load_signals()
+
+    today = datetime.now(
+        timezone.utc
+    ).date()
+
+    today_signals = []
+
+    for signal in signals:
+
+        registered = signal.get(
+            "registered_at",
+            ""
+        )
+
+        try:
+
+            date = datetime.strptime(
+                registered,
+                "%Y-%m-%d %H:%M:%S"
+            ).date()
+
+            if date == today:
+
+                today_signals.append(
+                    signal
+                )
+
+        except Exception:
+
+            pass
+
+    if not today_signals:
+
+        return (
+            "📅 Hoy no hay señales registradas."
+        )
+
+    (
+        total,
+        won,
+        lost,
+        pending,
+        effectiveness,
+        profit
+    ) = calculate_stats(
+        today_signals
+    )
+
+    return f"""
+📅 RENDIMIENTO DE HOY
+
+📥 Señales: {total}
+
+✅ Ganadas: {won}
+❌ Perdidas: {lost}
+⏳ Pendientes: {pending}
+
+🎯 Efectividad:
+{effectiveness:.1f}%
+
+💰 Ganancia:
+${profit:,.0f} COP
+"""
+
+
+# ============================================================
+# SEMANA
+# ============================================================
+
+def week_panel():
+
+    signals = load_signals()
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    start = now - timedelta(
+        days=7
+    )
+
+    selected = []
+
+    for signal in signals:
+
+        try:
+
+            registered = datetime.strptime(
+                signal["registered_at"],
+                "%Y-%m-%d %H:%M:%S"
+            ).replace(
+                tzinfo=timezone.utc
+            )
+
+            if registered >= start:
+
+                selected.append(
+                    signal
+                )
+
+        except Exception:
+
+            pass
+
+    (
+        total,
+        won,
+        lost,
+        pending,
+        effectiveness,
+        profit
+    ) = calculate_stats(
+        selected
+    )
+
+    return f"""
+📆 RENDIMIENTO ÚLTIMOS 7 DÍAS
+
+📥 Señales: {total}
+
+✅ Ganadas: {won}
+❌ Perdidas: {lost}
+⏳ Pendientes: {pending}
+
+🎯 Efectividad:
+{effectiveness:.1f}%
+
+💰 Ganancia:
+${profit:,.0f} COP
+"""
+
+
+# ============================================================
+# MES
+# ============================================================
+
+def month_panel():
+
+    signals = load_signals()
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    selected = []
+
+    for signal in signals:
+
+        try:
+
+            registered = datetime.strptime(
+                signal["registered_at"],
+                "%Y-%m-%d %H:%M:%S"
+            ).replace(
+                tzinfo=timezone.utc
+            )
+
+            if (
+                registered.year
+                == now.year
+                and
+                registered.month
+                == now.month
+            ):
+
+                selected.append(
+                    signal
+                )
+
+        except Exception:
+
+            pass
+
+    (
+        total,
+        won,
+        lost,
+        pending,
+        effectiveness,
+        profit
+    ) = calculate_stats(
+        selected
+    )
+
+    return f"""
+🗓 RENDIMIENTO DEL MES
+
+📥 Señales: {total}
+
+✅ Ganadas: {won}
+❌ Perdidas: {lost}
+⏳ Pendientes: {pending}
+
+🎯 Efectividad:
+{effectiveness:.1f}%
+
+💰 Ganancia:
+${profit:,.0f} COP
+"""
+
+
+# ============================================================
+# CALENDARIO
+# ============================================================
+
+def calendar_panel():
+
+    signals = load_signals()
+
+    if not signals:
+
+        return (
+            "📅 Todavía no hay señales."
+        )
+
+    grouped = {}
+
+    for signal in signals:
+
+        date = signal.get(
+            "registered_at",
+            ""
+        )[:10]
+
+        if date:
+
+            if date not in grouped:
+
+                grouped[date] = []
+
+            grouped[date].append(
+                signal
+            )
+
+    output = """
+╔════════════════════════════╗
+║       📅 CALENDARIO         ║
+╚════════════════════════════╝
+"""
+
+    for date in sorted(
+        grouped.keys(),
+        reverse=True
+    ):
+
+        items = grouped[
+            date
+        ]
+
+        won = sum(
+            1
+            for s in items
+            if s.get(
+                "result"
+            ) == "GANADA"
+        )
+
+        lost = sum(
+            1
+            for s in items
+            if s.get(
+                "result"
+            ) == "PERDIDA"
+        )
+
+        pending = sum(
+            1
+            for s in items
+            if s.get(
+                "result"
+            ) == "PENDIENTE"
+        )
+
+        output += f"""
+
+📆 {date}
+
+📥 {len(items)}
+✅ {won}
+❌ {lost}
+⏳ {pending}
+
+"""
+
+    return output
+
+
+# ============================================================
+# ACTUALIZAR RESULTADO MANUAL
+# ============================================================
+
+def update_result(
+    signal_id,
+    result
+):
+
+    signals = load_signals()
+
+    for signal in signals:
+
+        if signal.get(
+            "id"
+        ) == signal_id:
+
+            signal[
+                "result"
+            ] = result
+
+            odds = signal.get(
+                "odds"
+            )
+
+            if result == "GANADA":
+
+                if odds:
+
+                    signal[
+                        "profit"
+                    ] = (
+                        BET_AMOUNT
+                        *
+                        (
+                            odds - 1
+                        )
+                    )
+
+                else:
+
+                    signal[
+                        "profit"
+                    ] = BET_AMOUNT
+
+            elif result == "PERDIDA":
+
+                signal[
+                    "profit"
+                ] = -BET_AMOUNT
+
+            save_signals(
+                signals
+            )
+
+            return True
+
+    return False
+
+
+# ============================================================
+# PROCESAR MENSAJES
+# ============================================================
+
+def process_message(
+    message
+):
+
+    chat = message.get(
+        "chat",
+        {}
+    )
+
+    chat_id = chat.get(
+        "id"
+    )
 
     text = message.get(
         "text",
         ""
     ).strip()
 
+    if not chat_id:
+        return
+
     if not text:
         return
 
-    # Nunca registrar comandos como apuestas
+    print(
+        "Procesando mensaje:",
+        text[:100]
+    )
 
-    if text == "/start":
+    # ========================================================
+    # COMANDOS — TIENEN PRIORIDAD ABSOLUTA
+    # ========================================================
+
+    command = text.split()[0].lower()
+
+    if command == "/start":
 
         send_message(
             chat_id,
             """
 🤖 APUESTASMURCIA BOT
 
-🟢 Bot activo.
-
-Envíame las alertas de BetMines.
+🟢 Bot conectado.
 
 📊 /panel
-📅 /hoy
-📆 /semana
-🗓️ /mes
-📅 /calendario
 🎯 /estrategias
 ⏳ /pendientes
+📅 /hoy
+📆 /semana
+🗓 /mes
+📅 /calendario
+
+También puedes enviar
+alertas de BetMines.
 """
         )
 
         return
 
-    if text == "/panel":
+    if command == "/panel":
 
         send_message(
             chat_id,
@@ -817,7 +1275,7 @@ Envíame las alertas de BetMines.
 
         return
 
-    if text == "/estrategias":
+    if command == "/estrategias":
 
         send_message(
             chat_id,
@@ -826,7 +1284,7 @@ Envíame las alertas de BetMines.
 
         return
 
-    if text == "/pendientes":
+    if command == "/pendientes":
 
         send_message(
             chat_id,
@@ -835,15 +1293,128 @@ Envíame las alertas de BetMines.
 
         return
 
-    # Otros comandos reservados
+    if command == "/hoy":
 
-    if text.startswith("/"):
+        send_message(
+            chat_id,
+            today_panel()
+        )
+
         return
 
-    # Solo registra mensajes que parezcan
-    # realmente alertas
+    if command == "/semana":
 
-    if not is_bet_alert(text):
+        send_message(
+            chat_id,
+            week_panel()
+        )
+
+        return
+
+    if command == "/mes":
+
+        send_message(
+            chat_id,
+            month_panel()
+        )
+
+        return
+
+    if command == "/calendario":
+
+        send_message(
+            chat_id,
+            calendar_panel()
+        )
+
+        return
+
+    # ========================================================
+    # RESULTADOS MANUALES
+    # ========================================================
+
+    match = re.match(
+        r"^/ganada\s+(\d+)$",
+        text,
+        re.IGNORECASE
+    )
+
+    if match:
+
+        signal_id = int(
+            match.group(1)
+        )
+
+        if update_result(
+            signal_id,
+            "GANADA"
+        ):
+
+            send_message(
+                chat_id,
+                f"✅ Señal #{signal_id} marcada como GANADA."
+            )
+
+        else:
+
+            send_message(
+                chat_id,
+                f"❌ No existe la señal #{signal_id}."
+            )
+
+        return
+
+    match = re.match(
+        r"^/perdida\s+(\d+)$",
+        text,
+        re.IGNORECASE
+    )
+
+    if match:
+
+        signal_id = int(
+            match.group(1)
+        )
+
+        if update_result(
+            signal_id,
+            "PERDIDA"
+        ):
+
+            send_message(
+                chat_id,
+                f"❌ Señal #{signal_id} marcada como PERDIDA."
+            )
+
+        else:
+
+            send_message(
+                chat_id,
+                f"❌ No existe la señal #{signal_id}."
+            )
+
+        return
+
+    # ========================================================
+    # OTROS COMANDOS
+    # ========================================================
+
+    if text.startswith("/"):
+
+        print(
+            "Comando no reconocido:",
+            text
+        )
+
+        return
+
+    # ========================================================
+    # ALERTA BETMINES
+    # ========================================================
+
+    if not is_bet_alert(
+        text
+    ):
 
         print(
             "Mensaje ignorado:",
@@ -856,18 +1427,24 @@ Envíame las alertas de BetMines.
         text
     )
 
-    odds = (
-        f"{signal['odds']:.2f}"
-        if signal["odds"]
-        else "N/D"
+    odds = signal.get(
+        "odds"
     )
+
+    if odds:
+
+        odds_text = f"{odds:.2f}"
+
+    else:
+
+        odds_text = "N/D"
 
     send_message(
         chat_id,
         f"""
-╔══════════════════════════╗
-║   📥 SEÑAL REGISTRADA    ║
-╚══════════════════════════╝
+╔════════════════════════════╗
+║    📥 SEÑAL REGISTRADA     ║
+╚════════════════════════════╝
 
 🆔 ID: #{signal['id']}
 
@@ -884,7 +1461,7 @@ Envíame las alertas de BetMines.
 {signal['strategy']}
 
 💰 CUOTA:
-{odds}
+{odds_text}
 
 ⏳ ESTADO:
 PENDIENTE
@@ -894,17 +1471,23 @@ PENDIENTE
 📊 /panel
 🎯 /estrategias
 ⏳ /pendientes
+📅 /calendario
 """
     )
 
 
 # ============================================================
-# RECOGER MENSAJES
+# EJECUCIÓN
 # ============================================================
 
 def collect_messages():
 
     offset = load_offset()
+
+    print(
+        "Offset actual:",
+        offset
+    )
 
     updates = get_updates(
         offset
@@ -917,29 +1500,33 @@ def collect_messages():
 
     for update in updates:
 
-        update_id = update[
+        update_id = update.get(
             "update_id"
-        ]
+        )
 
-        offset = update_id + 1
+        if update_id is None:
+            continue
 
-        if "message" in update:
+        try:
 
-            try:
+            if "message" in update:
 
                 process_message(
                     update["message"]
                 )
 
-            except Exception as e:
+        except Exception as e:
 
-                print(
-                    "Error procesando:",
-                    e
-                )
+            print(
+                "Error procesando mensaje:",
+                e
+            )
+
+        # Guardamos el offset DESPUÉS
+        # de procesar el mensaje
 
         save_offset(
-            offset
+            update_id + 1
         )
 
 
@@ -954,7 +1541,7 @@ if __name__ == "__main__":
     )
 
     print(
-        "      APUESTASMURCIA BOT"
+        "       APUESTASMURCIA BOT"
     )
 
     print(
@@ -962,7 +1549,7 @@ if __name__ == "__main__":
     )
 
     print(
-        "Revisando mensajes de Telegram..."
+        "Revisando Telegram..."
     )
 
     collect_messages()
