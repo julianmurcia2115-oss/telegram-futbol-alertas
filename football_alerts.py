@@ -9,8 +9,10 @@ from datetime import datetime, timezone, timedelta
 # =========================================================
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+API_FOOTBALL_KEY = os.environ.get("API_FOOTBALL_KEY", "")
 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+FOOTBALL_API_URL = "https://v3.football.api-sports.io"
 
 SIGNALS_FILE = "signals.json"
 OFFSET_FILE = "telegram_offset.json"
@@ -23,7 +25,6 @@ BET_AMOUNT = 5000
 # =========================================================
 
 def telegram_request(method, data=None):
-
     try:
         response = requests.post(
             f"{TELEGRAM_URL}/{method}",
@@ -44,11 +45,7 @@ def telegram_request(method, data=None):
         return result
 
     except Exception as e:
-
-        print(
-            f"ERROR TELEGRAM {method}:",
-            e
-        )
+        print(f"ERROR TELEGRAM {method}:", e)
 
         return {
             "ok": False,
@@ -64,7 +61,6 @@ def send_message(chat_id, text, keyboard=None):
     }
 
     if keyboard is not None:
-
         data["reply_markup"] = json.dumps(
             {
                 "inline_keyboard": keyboard
@@ -92,7 +88,6 @@ def edit_message(
     }
 
     if keyboard is not None:
-
         data["reply_markup"] = json.dumps(
             {
                 "inline_keyboard": keyboard
@@ -292,20 +287,14 @@ def main_keyboard():
 def back_keyboard():
 
     return [
-
         [
             {
                 "text": "⬅️ Volver al panel",
                 "callback_data": "inicio"
             }
         ]
-
     ]
 
-
-# =========================================================
-# BOTONES CALENDARIO
-# =========================================================
 
 def calendar_keyboard():
 
@@ -376,8 +365,7 @@ def extract_strategy(text):
         text,
         [
             r"Resultado\s*deseado\s*:\s*(.+)",
-            r"Estrategia\s*:\s*(.+)",
-            r"🎯\s*(.+)"
+            r"Estrategia\s*:\s*(.+)"
         ],
         ""
     )
@@ -387,10 +375,22 @@ def extract_strategy(text):
 
     lower = text.lower()
 
+    if "primer tiempo" in lower and "empate" in lower:
+        return "Empate Primer Tiempo"
+
+    if "1er tiempo" in lower and "empate" in lower:
+        return "Empate Primer Tiempo"
+
     if "más de 3.5" in lower:
         return "Más de 3.5 goles"
 
+    if "over 3.5" in lower:
+        return "Más de 3.5 goles"
+
     if "más de 2.5" in lower:
+        return "Más de 2.5 goles"
+
+    if "over 2.5" in lower:
         return "Más de 2.5 goles"
 
     if "ambos marcan" in lower:
@@ -402,7 +402,13 @@ def extract_strategy(text):
     if "victoria local" in lower:
         return "Victoria Local"
 
+    if "local gana" in lower:
+        return "Victoria Local"
+
     if "victoria visitante" in lower:
+        return "Victoria Visitante"
+
+    if "visitante gana" in lower:
         return "Victoria Visitante"
 
     return "SIN ESTRATEGIA"
@@ -431,6 +437,75 @@ def extract_odds(text):
     except Exception:
 
         return None
+
+
+def extract_signal_date(text):
+
+    value = extract(
+        text,
+        [
+            r"🗓\s*(.+)",
+            r"Fecha\s*:\s*(.+)"
+        ],
+        ""
+    )
+
+    if not value:
+        return None
+
+    patterns = [
+        r"(\d{4})-(\d{2})-(\d{2})",
+        r"(\d{2})/(\d{2})/(\d{4})",
+        r"(\d{2})-(\d{2})-(\d{4})"
+    ]
+
+    for pattern in patterns:
+
+        match = re.search(
+            pattern,
+            value
+        )
+
+        if not match:
+            continue
+
+        groups = match.groups()
+
+        try:
+
+            if len(groups[0]) == 4:
+
+                year, month, day = groups
+
+            else:
+
+                day, month, year = groups
+
+            return (
+                f"{year}-"
+                f"{month.zfill(2)}-"
+                f"{day.zfill(2)}"
+            )
+
+        except Exception:
+
+            pass
+
+    lower = value.lower()
+
+    now = datetime.now(timezone.utc)
+
+    if "mañana" in lower:
+
+        return (
+            now + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+
+    if "hoy" in lower:
+
+        return now.strftime("%Y-%m-%d")
+
+    return None
 
 
 # =========================================================
@@ -463,7 +538,12 @@ def is_bet_alert(text):
         "btts",
         "más de 2.5",
         "más de 3.5",
-        "ambos marcan"
+        "over 2.5",
+        "over 3.5",
+        "ambos marcan",
+        "victoria local",
+        "victoria visitante",
+        "empate"
 
     ]
 
@@ -478,7 +558,7 @@ def is_bet_alert(text):
 
 
 # =========================================================
-# SIGUIENTE ID
+# REGISTRAR SEÑAL
 # =========================================================
 
 def next_signal_id(signals):
@@ -491,13 +571,11 @@ def next_signal_id(signals):
     for signal in signals:
 
         try:
-
             ids.append(
                 int(signal.get("id", 0))
             )
 
         except Exception:
-
             pass
 
     if not ids:
@@ -506,11 +584,10 @@ def next_signal_id(signals):
     return max(ids) + 1
 
 
-# =========================================================
-# EVITAR DUPLICADOS
-# =========================================================
-
-def signal_already_exists(text, signals):
+def signal_already_exists(
+    text,
+    signals
+):
 
     clean_text = text.strip()
 
@@ -527,10 +604,6 @@ def signal_already_exists(text, signals):
     return False
 
 
-# =========================================================
-# REGISTRAR SEÑAL
-# =========================================================
-
 def register_signal(text):
 
     signals = load_signals()
@@ -541,7 +614,7 @@ def register_signal(text):
     ):
 
         print(
-            "Señal duplicada. No se registra."
+            "Señal duplicada."
         )
 
         return None
@@ -587,6 +660,11 @@ def register_signal(text):
                 ]
             ),
 
+        "api_date":
+            extract_signal_date(
+                text
+            ),
+
         "strategy":
             extract_strategy(
                 text
@@ -600,6 +678,12 @@ def register_signal(text):
         "result":
             "PENDIENTE",
 
+        "result_at":
+            None,
+
+        "fixture_id":
+            None,
+
         "raw_message":
             text
     }
@@ -609,6 +693,516 @@ def register_signal(text):
     save_signals(signals)
 
     return signal
+
+
+# =========================================================
+# API-FOOTBALL
+# =========================================================
+
+def football_api_request(
+    endpoint,
+    params
+):
+
+    if not API_FOOTBALL_KEY:
+
+        print(
+            "API_FOOTBALL_KEY no configurada."
+        )
+
+        return None
+
+    try:
+
+        response = requests.get(
+            f"{FOOTBALL_API_URL}/{endpoint}",
+            headers={
+                "x-apisports-key":
+                    API_FOOTBALL_KEY
+            },
+            params=params,
+            timeout=30
+        )
+
+        data = response.json()
+
+        if data.get("errors"):
+
+            print(
+                "API Football errors:",
+                data.get("errors")
+            )
+
+            return None
+
+        return data
+
+    except Exception as e:
+
+        print(
+            "ERROR API Football:",
+            e
+        )
+
+        return None
+
+
+# =========================================================
+# NORMALIZAR EQUIPOS
+# =========================================================
+
+def normalize_name(value):
+
+    if not value:
+        return ""
+
+    value = value.lower()
+
+    replacements = {
+
+        "á": "a",
+        "é": "e",
+        "í": "i",
+        "ó": "o",
+        "ú": "u",
+        "ü": "u",
+        "ñ": "n"
+
+    }
+
+    for old, new in replacements.items():
+
+        value = value.replace(
+            old,
+            new
+        )
+
+    value = re.sub(
+        r"[^a-z0-9 ]",
+        " ",
+        value
+    )
+
+    value = re.sub(
+        r"\s+",
+        " ",
+        value
+    )
+
+    return value.strip()
+
+
+def team_words(value):
+
+    stopwords = {
+
+        "fc",
+        "cf",
+        "sc",
+        "club",
+        "de",
+        "the",
+        "afc",
+        "cd",
+        "ac"
+
+    }
+
+    return {
+
+        word
+
+        for word in normalize_name(
+            value
+        ).split()
+
+        if len(word) > 2
+        and word not in stopwords
+
+    }
+
+
+def teams_match(
+    signal_match,
+    home,
+    away
+):
+
+    if not signal_match:
+        return False
+
+    text = normalize_name(
+        signal_match
+    )
+
+    home_words = team_words(home)
+    away_words = team_words(away)
+
+    if not home_words or not away_words:
+        return False
+
+    home_found = any(
+        word in text
+        for word in home_words
+    )
+
+    away_found = any(
+        word in text
+        for word in away_words
+    )
+
+    return home_found and away_found
+
+
+# =========================================================
+# EVALUAR ESTRATEGIA
+# =========================================================
+
+def evaluate_strategy(
+    signal,
+    fixture
+):
+
+    strategy = normalize_name(
+        signal.get(
+            "strategy",
+            ""
+        )
+    )
+
+    goals = fixture.get(
+        "goals",
+        {}
+    )
+
+    goals_home = goals.get("home")
+    goals_away = goals.get("away")
+
+    if goals_home is None:
+        return None
+
+    if goals_away is None:
+        return None
+
+    total_goals = (
+        goals_home +
+        goals_away
+    )
+
+    # Ambos marcan
+
+    if (
+        "ambos marcan" in strategy
+        or "btts" in strategy
+    ):
+
+        return (
+            "GANADA"
+            if goals_home > 0
+            and goals_away > 0
+            else "PERDIDA"
+        )
+
+    # Más de 2.5
+
+    if (
+        "mas de 2.5" in strategy
+        or "over 2.5" in strategy
+    ):
+
+        return (
+            "GANADA"
+            if total_goals >= 3
+            else "PERDIDA"
+        )
+
+    # Más de 3.5
+
+    if (
+        "mas de 3.5" in strategy
+        or "over 3.5" in strategy
+    ):
+
+        return (
+            "GANADA"
+            if total_goals >= 4
+            else "PERDIDA"
+        )
+
+    # Victoria local
+
+    if "victoria local" in strategy:
+
+        return (
+            "GANADA"
+            if goals_home > goals_away
+            else "PERDIDA"
+        )
+
+    # Victoria visitante
+
+    if "victoria visitante" in strategy:
+
+        return (
+            "GANADA"
+            if goals_away > goals_home
+            else "PERDIDA"
+        )
+
+    # Empate primer tiempo
+
+    if "empate primer tiempo" in strategy:
+
+        halftime = fixture.get(
+            "score",
+            {}
+        ).get(
+            "halftime",
+            {}
+        )
+
+        ht_home = halftime.get("home")
+        ht_away = halftime.get("away")
+
+        if (
+            ht_home is None
+            or ht_away is None
+        ):
+            return None
+
+        return (
+            "GANADA"
+            if ht_home == ht_away
+            else "PERDIDA"
+        )
+
+    print(
+        "Estrategia no soportada:",
+        signal.get("strategy")
+    )
+
+    return None
+
+
+# =========================================================
+# COMPROBAR RESULTADOS AUTOMÁTICAMENTE
+# =========================================================
+
+def check_pending_results():
+
+    if not API_FOOTBALL_KEY:
+
+        print(
+            "Falta API_FOOTBALL_KEY."
+        )
+
+        return
+
+    signals = load_signals()
+
+    pending = [
+
+        signal
+
+        for signal in signals
+
+        if signal.get(
+            "result",
+            "PENDIENTE"
+        ) == "PENDIENTE"
+
+    ]
+
+    if not pending:
+
+        print(
+            "No hay señales pendientes."
+        )
+
+        return
+
+    print(
+        f"Pendientes: {len(pending)}"
+    )
+
+    fixtures_by_date = {}
+
+    dates = set()
+
+    for signal in pending:
+
+        api_date = signal.get(
+            "api_date"
+        )
+
+        if api_date:
+            dates.add(api_date)
+
+    for api_date in dates:
+
+        data = football_api_request(
+            "fixtures",
+            {
+                "date": api_date
+            }
+        )
+
+        if data:
+
+            fixtures_by_date[
+                api_date
+            ] = data.get(
+                "response",
+                []
+            )
+
+        else:
+
+            fixtures_by_date[
+                api_date
+            ] = []
+
+    changed = False
+
+    for signal in pending:
+
+        api_date = signal.get(
+            "api_date"
+        )
+
+        if not api_date:
+            continue
+
+        fixtures = fixtures_by_date.get(
+            api_date,
+            []
+        )
+
+        selected = None
+
+        for fixture in fixtures:
+
+            teams = fixture.get(
+                "teams",
+                {}
+            )
+
+            home = teams.get(
+                "home",
+                {}
+            ).get(
+                "name",
+                ""
+            )
+
+            away = teams.get(
+                "away",
+                {}
+            ).get(
+                "name",
+                ""
+            )
+
+            if teams_match(
+                signal.get(
+                    "match",
+                    ""
+                ),
+                home,
+                away
+            ):
+
+                selected = fixture
+                break
+
+        if not selected:
+
+            print(
+                f"#{signal.get('id')} "
+                "partido no encontrado."
+            )
+
+            continue
+
+        fixture_data = selected.get(
+            "fixture",
+            {}
+        )
+
+        fixture_id = fixture_data.get(
+            "id"
+        )
+
+        status = fixture_data.get(
+            "status",
+            {}
+        ).get(
+            "short"
+        )
+
+        signal["fixture_id"] = fixture_id
+
+        print(
+            f"#{signal.get('id')} "
+            f"status={status}"
+        )
+
+        if status not in {
+            "FT",
+            "AET",
+            "PEN"
+        }:
+
+            continue
+
+        result = evaluate_strategy(
+            signal,
+            selected
+        )
+
+        if result is None:
+            continue
+
+        signal["result"] = result
+
+        signal["result_at"] = (
+            datetime.now(
+                timezone.utc
+            ).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        )
+
+        signal["final_score"] = {
+
+            "home":
+                selected.get(
+                    "goals",
+                    {}
+                ).get("home"),
+
+            "away":
+                selected.get(
+                    "goals",
+                    {}
+                ).get("away")
+
+        }
+
+        changed = True
+
+        print(
+            f"#{signal.get('id')} "
+            f"RESULTADO: {result}"
+        )
+
+    if changed:
+
+        save_signals(signals)
+
+        print(
+            "Resultados guardados."
+        )
 
 
 # =========================================================
@@ -629,16 +1223,21 @@ def calculate_stats(signals):
             "PENDIENTE"
         )
 
-        odds = signal.get("odds")
+        odds = signal.get(
+            "odds"
+        )
 
         if result == "GANADA":
 
             won += 1
 
-            if isinstance(
-                odds,
-                (int, float)
-            ) and odds > 1:
+            if (
+                isinstance(
+                    odds,
+                    (int, float)
+                )
+                and odds > 1
+            ):
 
                 profit += (
                     BET_AMOUNT *
@@ -662,9 +1261,13 @@ def calculate_stats(signals):
     finished = won + lost
 
     effectiveness = (
+
         (won / finished) * 100
+
         if finished
+
         else 0
+
     )
 
     total_staked = (
@@ -673,9 +1276,13 @@ def calculate_stats(signals):
     )
 
     roi = (
+
         (profit / total_staked) * 100
+
         if total_staked
+
         else 0
+
     )
 
     return {
@@ -691,14 +1298,16 @@ def calculate_stats(signals):
 
 
 # =========================================================
-# PANEL
+# PANEL PRINCIPAL
 # =========================================================
 
 def dashboard():
 
     signals = load_signals()
 
-    stats = calculate_stats(signals)
+    stats = calculate_stats(
+        signals
+    )
 
     return f"""
 🏆 APUESTASMURCIA
@@ -706,7 +1315,7 @@ def dashboard():
 
 🎛️ CENTRO DE CONTROL
 
-📥 Señales registradas
+📥 Señales
 {stats['total']}
 
 ⏳ Pendientes
@@ -746,7 +1355,9 @@ def rendimiento():
 
     signals = load_signals()
 
-    stats = calculate_stats(signals)
+    stats = calculate_stats(
+        signals
+    )
 
     return f"""
 📊 RENDIMIENTO GENERAL
@@ -766,13 +1377,13 @@ def rendimiento():
 
 ━━━━━━━━━━━━━━━━━━━━
 
-🎯 EFECTIVIDAD
+🎯 Efectividad
 {stats['effectiveness']:.1f}%
 
 📈 ROI
 {stats['roi']:.1f}%
 
-💰 GANANCIA
+💰 Ganancia
 ${stats['profit']:,.0f} COP
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -806,7 +1417,9 @@ def estrategias():
 
     if not groups:
 
-        return "🎯 No hay estrategias registradas."
+        return (
+            "🎯 No hay estrategias registradas."
+        )
 
     text = """
 🎯 RENDIMIENTO POR ESTRATEGIA
@@ -817,7 +1430,9 @@ def estrategias():
         groups.items()
     ):
 
-        stats = calculate_stats(items)
+        stats = calculate_stats(
+            items
+        )
 
         text += f"""
 
@@ -842,26 +1457,6 @@ def estrategias():
 # PENDIENTES
 # =========================================================
 
-def pending_keyboard(signal):
-
-    signal_id = signal.get("id")
-
-    return [
-
-        [
-            {
-                "text": "✅ GANADA",
-                "callback_data": f"win:{signal_id}"
-            },
-            {
-                "text": "❌ PERDIDA",
-                "callback_data": f"loss:{signal_id}"
-            }
-        ]
-
-    ]
-
-
 def pendientes_text():
 
     signals = load_signals()
@@ -882,26 +1477,30 @@ def pendientes_text():
         return (
             "⏳ PENDIENTES\n\n"
             "🟢 No tienes señales pendientes."
-        ), []
+        ), back_keyboard()
 
     text = """
 ⏳ SEÑALES PENDIENTES
 ━━━━━━━━━━━━━━━━━━━━
 """
 
-    keyboard = []
-
     for signal in pending[:20]:
 
-        odds = signal.get("odds")
+        odds = signal.get(
+            "odds"
+        )
 
         odds_text = (
+
             f"{odds:.2f}"
+
             if isinstance(
                 odds,
                 (int, float)
             )
+
             else "N/D"
+
         )
 
         text += f"""
@@ -919,77 +1518,12 @@ def pendientes_text():
 ━━━━━━━━━━━━━━━━━━━━
 """
 
-        keyboard.extend(
-            pending_keyboard(signal)
-        )
-
-    keyboard.append(
-        [
-            {
-                "text": "⬅️ Volver al panel",
-                "callback_data": "inicio"
-            }
-        ]
+    text += (
+        "\n🤖 Los resultados se "
+        "comprobarán automáticamente."
     )
 
-    if len(pending) > 20:
-
-        text += (
-            f"\n📌 Mostrando 20 de "
-            f"{len(pending)} pendientes."
-        )
-
-    return text, keyboard
-
-
-# =========================================================
-# CAMBIAR RESULTADO
-# =========================================================
-
-def update_result(signal_id, result):
-
-    signals = load_signals()
-
-    found = None
-
-    for signal in signals:
-
-        try:
-
-            current_id = int(
-                signal.get("id")
-            )
-
-        except Exception:
-
-            continue
-
-        if current_id == int(signal_id):
-
-            found = signal
-            break
-
-    if not found:
-        return False
-
-    if found.get(
-        "result",
-        "PENDIENTE"
-    ) != "PENDIENTE":
-
-        return False
-
-    found["result"] = result
-
-    found["result_at"] = (
-        datetime.now(
-            timezone.utc
-        ).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-    )
-
-    return save_signals(signals)
+    return text, back_keyboard()
 
 
 # =========================================================
@@ -1021,7 +1555,9 @@ def calendar_period(period):
 
     signals = load_signals()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(
+        timezone.utc
+    )
 
     if period == "hoy":
 
@@ -1034,7 +1570,9 @@ def calendar_period(period):
 
     elif period == "semana":
 
-        start = now - timedelta(days=7)
+        start = now - timedelta(
+            days=7
+        )
 
     elif period == "mes":
 
@@ -1061,21 +1599,32 @@ def calendar_period(period):
         if not date_value:
             continue
 
-        if start is None or date_value >= start:
+        if (
+            start is None
+            or date_value >= start
+        ):
 
-            selected.append(signal)
+            selected.append(
+                signal
+            )
 
-    stats = calculate_stats(selected)
+    stats = calculate_stats(
+        selected
+    )
 
     title = {
 
-        "hoy": "📆 HOY",
+        "hoy":
+            "📆 HOY",
 
-        "semana": "📆 ÚLTIMOS 7 DÍAS",
+        "semana":
+            "📆 ÚLTIMOS 7 DÍAS",
 
-        "mes": "🗓️ ESTE MES",
+        "mes":
+            "🗓️ ESTE MES",
 
-        "todo": "📚 TODO EL HISTORIAL"
+        "todo":
+            "📚 TODO EL HISTORIAL"
 
     }.get(
         period,
@@ -1121,7 +1670,9 @@ def ganancias():
 
     signals = load_signals()
 
-    stats = calculate_stats(signals)
+    stats = calculate_stats(
+        signals
+    )
 
     finished = (
         stats["won"] +
@@ -1169,13 +1720,17 @@ def estadisticas():
 
     signals = load_signals()
 
-    stats = calculate_stats(signals)
+    stats = calculate_stats(
+        signals
+    )
 
     odds = []
 
     for signal in signals:
 
-        value = signal.get("odds")
+        value = signal.get(
+            "odds"
+        )
 
         if isinstance(
             value,
@@ -1185,9 +1740,13 @@ def estadisticas():
             odds.append(value)
 
     average_odds = (
+
         sum(odds) / len(odds)
+
         if odds
+
         else 0
+
     )
 
     return f"""
@@ -1230,33 +1789,39 @@ ${stats['profit']:,.0f} COP
 
 def configuracion():
 
+    api_status = (
+        "🟢 CONECTADA"
+        if API_FOOTBALL_KEY
+        else "🔴 NO CONFIGURADA"
+    )
+
     return f"""
 ⚙️ CONFIGURACIÓN
 ━━━━━━━━━━━━━━━━━━━━
 
 💵 Apuesta fija
-
 ${BET_AMOUNT:,.0f} COP
 
 📥 Recepción
-
 Telegram
 
-🔄 Ejecución
+🤖 Resultados automáticos
+{api_status}
 
+🔄 Ejecución
 Cada 5 minutos
 
 💾 Registro
-
 signals.json
 
-🔢 Control
-
+🔢 Offset
 telegram_offset.json
 
 ━━━━━━━━━━━━━━━━━━━━
 
-🤖 ApuestasMurcia Bot
+⚽ API-Football
+Comprobación automática
+de resultados.
 """
 
 
@@ -1267,24 +1832,16 @@ telegram_offset.json
 def process_callback(callback):
 
     callback_id = callback.get("id")
-
-    data = callback.get(
-        "data",
-        ""
-    )
-
+    data = callback.get("data", "")
     message = callback.get("message")
 
     if not message:
         return
 
     chat_id = message["chat"]["id"]
-
     message_id = message["message_id"]
 
     answer_callback(callback_id)
-
-    # PANEL
 
     if data == "inicio":
 
@@ -1297,8 +1854,6 @@ def process_callback(callback):
 
         return
 
-    # RENDIMIENTO
-
     if data == "rendimiento":
 
         edit_message(
@@ -1310,8 +1865,6 @@ def process_callback(callback):
 
         return
 
-    # ESTRATEGIAS
-
     if data == "estrategias":
 
         edit_message(
@@ -1322,8 +1875,6 @@ def process_callback(callback):
         )
 
         return
-
-    # CALENDARIO
 
     if data == "calendario":
 
@@ -1337,8 +1888,6 @@ def process_callback(callback):
 
         return
 
-    # CALENDARIO HOY
-
     if data == "cal_hoy":
 
         edit_message(
@@ -1349,8 +1898,6 @@ def process_callback(callback):
         )
 
         return
-
-    # CALENDARIO SEMANA
 
     if data == "cal_semana":
 
@@ -1363,8 +1910,6 @@ def process_callback(callback):
 
         return
 
-    # CALENDARIO MES
-
     if data == "cal_mes":
 
         edit_message(
@@ -1376,8 +1921,6 @@ def process_callback(callback):
 
         return
 
-    # CALENDARIO TODO
-
     if data == "cal_todo":
 
         edit_message(
@@ -1388,8 +1931,6 @@ def process_callback(callback):
         )
 
         return
-
-    # PENDIENTES
 
     if data == "pendientes":
 
@@ -1404,8 +1945,6 @@ def process_callback(callback):
 
         return
 
-    # GANANCIAS
-
     if data == "ganancias":
 
         edit_message(
@@ -1416,8 +1955,6 @@ def process_callback(callback):
         )
 
         return
-
-    # ESTADÍSTICAS
 
     if data == "estadisticas":
 
@@ -1430,8 +1967,6 @@ def process_callback(callback):
 
         return
 
-    # CONFIGURACIÓN
-
     if data == "configuracion":
 
         edit_message(
@@ -1443,83 +1978,9 @@ def process_callback(callback):
 
         return
 
-    # GANADA
-
-    if data.startswith("win:"):
-
-        signal_id = data.split(
-            ":",
-            1
-        )[1]
-
-        success = update_result(
-            signal_id,
-            "GANADA"
-        )
-
-        if success:
-
-            text = (
-                f"✅ Señal #{signal_id} "
-                f"marcada como GANADA.\n\n"
-                f"💰 El rendimiento fue actualizado."
-            )
-
-        else:
-
-            text = (
-                f"⚠️ No se pudo actualizar "
-                f"la señal #{signal_id}.\n"
-                f"Puede que ya tenga resultado."
-            )
-
-        send_message(
-            chat_id,
-            text
-        )
-
-        return
-
-    # PERDIDA
-
-    if data.startswith("loss:"):
-
-        signal_id = data.split(
-            ":",
-            1
-        )[1]
-
-        success = update_result(
-            signal_id,
-            "PERDIDA"
-        )
-
-        if success:
-
-            text = (
-                f"❌ Señal #{signal_id} "
-                f"marcada como PERDIDA.\n\n"
-                f"📉 El rendimiento fue actualizado."
-            )
-
-        else:
-
-            text = (
-                f"⚠️ No se pudo actualizar "
-                f"la señal #{signal_id}.\n"
-                f"Puede que ya tenga resultado."
-            )
-
-        send_message(
-            chat_id,
-            text
-        )
-
-        return
-
 
 # =========================================================
-# COMANDOS
+# PROCESAR MENSAJES
 # =========================================================
 
 def process_message(message):
@@ -1546,8 +2007,6 @@ def process_message(message):
 
     command = text.split()[0].lower()
 
-    # START
-
     if command == "/start":
 
         send_message(
@@ -1557,8 +2016,6 @@ def process_message(message):
         )
 
         return
-
-    # PANEL
 
     if command == "/panel":
 
@@ -1570,8 +2027,6 @@ def process_message(message):
 
         return
 
-    # ESTRATEGIAS
-
     if command == "/estrategias":
 
         send_message(
@@ -1581,8 +2036,6 @@ def process_message(message):
         )
 
         return
-
-    # PENDIENTES
 
     if command == "/pendientes":
 
@@ -1596,8 +2049,6 @@ def process_message(message):
 
         return
 
-    # CALENDARIO
-
     if command == "/calendario":
 
         send_message(
@@ -1609,8 +2060,6 @@ def process_message(message):
 
         return
 
-    # COMANDO DESCONOCIDO
-
     if text.startswith("/"):
 
         print(
@@ -1619,8 +2068,6 @@ def process_message(message):
         )
 
         return
-
-    # ALERTA
 
     if not is_bet_alert(text):
 
@@ -1634,22 +2081,21 @@ def process_message(message):
     signal = register_signal(text)
 
     if signal is None:
-
-        print(
-            "Señal duplicada."
-        )
-
         return
 
     odds = signal.get("odds")
 
     odds_text = (
+
         f"{odds:.2f}"
+
         if isinstance(
             odds,
             (int, float)
         )
+
         else "N/D"
+
     )
 
     send_message(
@@ -1674,8 +2120,8 @@ def process_message(message):
 
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 Usa /panel para abrir
-el centro de control.
+🤖 El resultado será
+comprobado automáticamente.
 """
     )
 
@@ -1692,7 +2138,6 @@ def get_updates(offset=None):
     }
 
     if offset is not None:
-
         params["offset"] = offset
 
     try:
@@ -1704,11 +2149,6 @@ def get_updates(offset=None):
         )
 
         result = response.json()
-
-        print(
-            "getUpdates:",
-            result.get("ok")
-        )
 
         if not result.get("ok"):
 
@@ -1740,34 +2180,26 @@ def get_updates(offset=None):
 
 def main():
 
-    print(
-        "===================================="
-    )
+    print("====================================")
+    print("       APUESTASMURCIA BOT")
+    print("       PANEL + RESULTADOS")
+    print("       EJECUCIÓN CADA 5 MINUTOS")
+    print("====================================")
 
-    print(
-        "       APUESTASMURCIA BOT"
-    )
+    # 1. Comprobar resultados
+    check_pending_results()
 
-    print(
-        "       PANEL + BOTONES"
-    )
-
-    print(
-        "       EJECUCIÓN CADA 5 MINUTOS"
-    )
-
-    print(
-        "===================================="
-    )
-
+    # 2. Procesar Telegram
     offset = load_offset()
 
     print(
-        "Offset actual:",
+        "Offset:",
         offset
     )
 
-    updates = get_updates(offset)
+    updates = get_updates(
+        offset
+    )
 
     print(
         "Mensajes encontrados:",
@@ -1791,7 +2223,7 @@ def main():
             elif "callback_query" in update:
 
                 print(
-                    "Botón pulsado:",
+                    "Botón:",
                     update[
                         "callback_query"
                     ].get("data")
@@ -1814,17 +2246,9 @@ def main():
                 update_id + 1
             )
 
-    print(
-        "===================================="
-    )
-
-    print(
-        "Ejecución terminada."
-    )
-
-    print(
-        "===================================="
-    )
+    print("====================================")
+    print("Ejecución terminada.")
+    print("====================================")
 
 
 # =========================================================
@@ -1832,5 +2256,4 @@ def main():
 # =========================================================
 
 if __name__ == "__main__":
-
     main()
