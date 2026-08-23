@@ -10,6 +10,7 @@ permissions:
   contents: write
 
 jobs:
+
   football-alerts:
 
     runs-on: ubuntu-latest
@@ -36,6 +37,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
           python football_alerts.py
 
@@ -44,21 +46,19 @@ jobs:
         run: |
 
           git config user.name "Football Alerts Bot"
-          git config user.email "football-alerts-bot@users.noreply.github.com"
 
-          echo "===================================="
-          echo "GUARDANDO DATOS"
-          echo "===================================="
+          git config user.email "football-alerts-bot@users.noreply.github.com"
 
           git add signals.json bot_state.json
 
           if git diff --cached --quiet; then
-            echo "No hay cambios nuevos"
-          else
-            git commit -m "Actualizar datos del bot"
-            git push origin main
-          fi
 
-          echo "===================================="
-          echo "DATOS GUARDADOS"
-          echo "===================================="
+            echo "ℹ️ No hay cambios"
+
+          else
+
+            git commit -m "Actualizar datos del bot"
+
+            git push origin main
+
+          fi
