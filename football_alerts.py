@@ -1,13 +1,10 @@
 import os
 import re
 import json
-import base64
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "")
 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
@@ -17,9 +14,9 @@ OFFSET_FILE = "telegram_offset.json"
 BET_AMOUNT = 5000
 
 
-# ============================================================
+# =========================================================
 # TELEGRAM
-# ============================================================
+# =========================================================
 
 def telegram_request(method, data=None):
 
@@ -33,8 +30,9 @@ def telegram_request(method, data=None):
         result = response.json()
 
         print(
-            f"Telegram {method}:",
-            result.get("ok")
+            f"Telegram {method}: "
+            f"{result.get('ok')} "
+            f"{result}"
         )
 
         return result
@@ -42,23 +40,28 @@ def telegram_request(method, data=None):
     except Exception as e:
 
         print(
-            f"Error Telegram {method}:",
+            f"ERROR TELEGRAM {method}:",
             e
         )
 
         return {
-            "ok": False
+            "ok": False,
+            "error": str(e)
         }
 
 
-def send_message(chat_id, text, keyboard=None):
+def send_message(
+    chat_id,
+    text,
+    keyboard=None
+):
 
     data = {
         "chat_id": chat_id,
         "text": text
     }
 
-    if keyboard:
+    if keyboard is not None:
 
         data["reply_markup"] = json.dumps(
             {
@@ -86,21 +89,13 @@ def edit_message(
         "text": text
     }
 
-    if keyboard:
+    if keyboard is not None:
 
         data["reply_markup"] = json.dumps(
             {
                 "inline_keyboard": keyboard
             },
             ensure_ascii=False
-        )
-
-    else:
-
-        data["reply_markup"] = json.dumps(
-            {
-                "inline_keyboard": []
-            }
         )
 
     return telegram_request(
@@ -119,289 +114,140 @@ def answer_callback(callback_id):
     )
 
 
-# ============================================================
-# GITHUB
-# ============================================================
-
-def github_headers():
-
-    return {
-        "Authorization":
-            f"Bearer {GITHUB_TOKEN}",
-
-        "Accept":
-            "application/vnd.github+json",
-
-        "X-GitHub-Api-Version":
-            "2022-11-28"
-    }
-
-
-def github_get_file(filename):
-
-    if not GITHUB_TOKEN:
-        return None, None
-
-    if not GITHUB_REPOSITORY:
-        return None, None
-
-    url = (
-        f"https://api.github.com/repos/"
-        f"{GITHUB_REPOSITORY}/contents/{filename}"
-    )
-
-    try:
-
-        response = requests.get(
-            url,
-            headers=github_headers(),
-            timeout=30
-        )
-
-        if not response.ok:
-
-            print(
-                "GitHub GET:",
-                response.status_code
-            )
-
-            return None, None
-
-        data = response.json()
-
-        content = base64.b64decode(
-            data["content"]
-        ).decode("utf-8")
-
-        return (
-            content,
-            data.get("sha")
-        )
-
-    except Exception as e:
-
-        print(
-            "Error GitHub:",
-            e
-        )
-
-        return None, None
-
-
-def github_save_file(
-    filename,
-    content,
-    message
-):
-
-    if not GITHUB_TOKEN:
-        return False
-
-    if not GITHUB_REPOSITORY:
-        return False
-
-    url = (
-        f"https://api.github.com/repos/"
-        f"{GITHUB_REPOSITORY}/contents/{filename}"
-    )
-
-    try:
-
-        _, sha = github_get_file(
-            filename
-        )
-
-        encoded = base64.b64encode(
-            content.encode("utf-8")
-        ).decode("utf-8")
-
-        payload = {
-            "message": message,
-            "content": encoded
-        }
-
-        if sha:
-
-            payload["sha"] = sha
-
-        response = requests.put(
-            url,
-            headers=github_headers(),
-            json=payload,
-            timeout=30
-        )
-
-        if response.ok:
-
-            print(
-                filename,
-                "guardado."
-            )
-
-            return True
-
-        print(
-            "GitHub PUT:",
-            response.status_code,
-            response.text
-        )
-
-        return False
-
-    except Exception as e:
-
-        print(
-            "Error guardando:",
-            e
-        )
-
-        return False
-
-
-# ============================================================
-# SIGNALS
-# ============================================================
+# =========================================================
+# ARCHIVOS
+# =========================================================
 
 def load_signals():
 
-    content, _ = github_get_file(
-        SIGNALS_FILE
-    )
-
-    if content:
-
-        try:
-
-            return json.loads(
-                content
-            )
-
-        except Exception:
-            pass
-
-    if os.path.exists(
+    if not os.path.exists(
         SIGNALS_FILE
     ):
 
-        try:
+        return []
 
-            with open(
-                SIGNALS_FILE,
-                "r",
-                encoding="utf-8"
-            ) as file:
+    try:
 
-                return json.load(
-                    file
-                )
+        with open(
+            SIGNALS_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
 
-        except Exception:
-            pass
+            data = json.load(f)
+
+            if isinstance(data, list):
+
+                return data
+
+    except Exception as e:
+
+        print(
+            "Error leyendo signals.json:",
+            e
+        )
 
     return []
 
 
 def save_signals(signals):
 
-    content = json.dumps(
-        signals,
-        ensure_ascii=False,
-        indent=2
-    )
+    try:
 
-    with open(
-        SIGNALS_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
+        with open(
+            SIGNALS_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
 
-        file.write(content)
+            json.dump(
+                signals,
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
 
-    github_save_file(
-        SIGNALS_FILE,
-        content,
-        "Actualizar señales"
-    )
+        return True
+
+    except Exception as e:
+
+        print(
+            "Error guardando signals.json:",
+            e
+        )
+
+        return False
 
 
-# ============================================================
+# =========================================================
 # OFFSET
-# ============================================================
+# =========================================================
 
 def load_offset():
 
-    content, _ = github_get_file(
+    if not os.path.exists(
         OFFSET_FILE
-    )
+    ):
 
-    if content:
+        return None
 
-        try:
+    try:
 
-            data = json.loads(
-                content
-            )
+        with open(
+            OFFSET_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            data = json.load(f)
 
             return data.get(
                 "offset"
             )
 
-        except Exception:
-            pass
+    except Exception as e:
 
-    if os.path.exists(
-        OFFSET_FILE
-    ):
+        print(
+            "Error leyendo offset:",
+            e
+        )
 
-        try:
-
-            with open(
-                OFFSET_FILE,
-                "r",
-                encoding="utf-8"
-            ) as file:
-
-                data = json.load(
-                    file
-                )
-
-                return data.get(
-                    "offset"
-                )
-
-        except Exception:
-            pass
-
-    return None
+        return None
 
 
 def save_offset(offset):
 
-    content = json.dumps(
-        {
-            "offset": offset
-        },
-        indent=2
-    )
+    try:
 
-    with open(
-        OFFSET_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
+        with open(
+            OFFSET_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
 
-        file.write(content)
+            json.dump(
+                {
+                    "offset": offset
+                },
+                f,
+                indent=2
+            )
 
-    github_save_file(
-        OFFSET_FILE,
-        content,
-        "Actualizar Telegram offset"
-    )
+        return True
+
+    except Exception as e:
+
+        print(
+            "Error guardando offset:",
+            e
+        )
+
+        return False
 
 
-# ============================================================
-# MENÚ PRINCIPAL
-# ============================================================
+# =========================================================
+# BOTONES
+# =========================================================
 
 def main_keyboard():
 
@@ -412,7 +258,6 @@ def main_keyboard():
                 "text": "📊 Rendimiento",
                 "callback_data": "rendimiento"
             },
-
             {
                 "text": "🎯 Estrategias",
                 "callback_data": "estrategias"
@@ -424,7 +269,6 @@ def main_keyboard():
                 "text": "📅 Calendario",
                 "callback_data": "calendario"
             },
-
             {
                 "text": "⏳ Pendientes",
                 "callback_data": "pendientes"
@@ -436,7 +280,6 @@ def main_keyboard():
                 "text": "💰 Ganancias",
                 "callback_data": "ganancias"
             },
-
             {
                 "text": "📈 Estadísticas",
                 "callback_data": "estadisticas"
@@ -449,6 +292,7 @@ def main_keyboard():
                 "callback_data": "configuracion"
             }
         ]
+
     ]
 
 
@@ -458,7 +302,7 @@ def back_keyboard():
 
         [
             {
-                "text": "⬅️ Volver",
+                "text": "⬅️ Volver al panel",
                 "callback_data": "inicio"
             }
         ]
@@ -466,9 +310,240 @@ def back_keyboard():
     ]
 
 
-# ============================================================
+# =========================================================
+# EXTRACCIÓN DE DATOS
+# =========================================================
+
+def extract(
+    text,
+    patterns,
+    default="No identificado"
+):
+
+    if isinstance(
+        patterns,
+        str
+    ):
+
+        patterns = [
+            patterns
+        ]
+
+    for pattern in patterns:
+
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE
+        )
+
+        if match:
+
+            return match.group(
+                1
+            ).strip()
+
+    return default
+
+
+def extract_strategy(text):
+
+    result = extract(
+        text,
+        [
+            r"Resultado\s*deseado\s*:\s*(.+)",
+            r"Estrategia\s*:\s*(.+)",
+            r"🎯\s*(.+)"
+        ],
+        ""
+    )
+
+    if result:
+
+        return result
+
+    lower = text.lower()
+
+    if "más de 3.5" in lower:
+
+        return "Más de 3.5 goles"
+
+    if "más de 2.5" in lower:
+
+        return "Más de 2.5 goles"
+
+    if "ambos marcan" in lower:
+
+        return "Ambos Marcan"
+
+    if "btts" in lower:
+
+        return "Ambos Marcan"
+
+    if "victoria local" in lower:
+
+        return "Victoria Local"
+
+    if "victoria visitante" in lower:
+
+        return "Victoria Visitante"
+
+    return "SIN ESTRATEGIA"
+
+
+def extract_odds(text):
+
+    value = extract(
+        text,
+        [
+            r"bet365\s*:\s*([\d.,]+)",
+            r"cuota\s*:\s*([\d.,]+)"
+        ],
+        ""
+    )
+
+    if not value:
+
+        return None
+
+    try:
+
+        return float(
+            value.replace(
+                ",",
+                "."
+            )
+        )
+
+    except Exception:
+
+        return None
+
+
+# =========================================================
+# DETECTAR SEÑAL
+# =========================================================
+
+def is_bet_alert(text):
+
+    if not text:
+
+        return False
+
+    if text.startswith("/"):
+
+        return False
+
+    lower = text.lower()
+
+    keywords = [
+
+        "🏆",
+        "🆚",
+        "🗓",
+        "liga:",
+        "partido:",
+        "fecha:",
+        "estrategia:",
+        "resultado deseado:",
+        "bet365:",
+        "cuota:",
+        "betmines",
+        "btts",
+        "más de 2.5",
+        "más de 3.5",
+        "ambos marcan"
+    ]
+
+    matches = 0
+
+    for keyword in keywords:
+
+        if keyword.lower() in lower:
+
+            matches += 1
+
+    return matches >= 2
+
+
+# =========================================================
+# REGISTRAR SEÑAL
+# =========================================================
+
+def register_signal(text):
+
+    signals = load_signals()
+
+    signal = {
+
+        "id":
+            len(signals) + 1,
+
+        "registered_at":
+            datetime.now(
+                timezone.utc
+            ).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+
+        "league":
+            extract(
+                text,
+                [
+                    r"🏆\s*(.+)",
+                    r"Liga\s*:\s*(.+)"
+                ]
+            ),
+
+        "match":
+            extract(
+                text,
+                [
+                    r"🆚\s*(.+)",
+                    r"Partido\s*:\s*(.+)"
+                ]
+            ),
+
+        "date":
+            extract(
+                text,
+                [
+                    r"🗓\s*(.+)",
+                    r"Fecha\s*:\s*(.+)"
+                ]
+            ),
+
+        "strategy":
+            extract_strategy(
+                text
+            ),
+
+        "odds":
+            extract_odds(
+                text
+            ),
+
+        "result":
+            "PENDIENTE",
+
+        "raw_message":
+            text
+    }
+
+    signals.append(
+        signal
+    )
+
+    save_signals(
+        signals
+    )
+
+    return signal
+
+
+# =========================================================
 # ESTADÍSTICAS
-# ============================================================
+# =========================================================
 
 def calculate_stats(
     signals
@@ -520,40 +595,62 @@ def calculate_stats(
 
     finished = won + lost
 
-    effectiveness = (
+    if finished:
 
-        won / finished * 100
+        effectiveness = (
+            won / finished
+        ) * 100
 
-        if finished
+    else:
 
-        else 0
+        effectiveness = 0
+
+    total_staked = (
+        finished
+        *
+        BET_AMOUNT
     )
 
-    total_staked = finished * BET_AMOUNT
+    if total_staked:
 
-    roi = (
+        roi = (
+            profit
+            /
+            total_staked
+        ) * 100
 
-        profit / total_staked * 100
+    else:
 
-        if total_staked
-
-        else 0
-    )
+        roi = 0
 
     return {
-        "total": len(signals),
-        "won": won,
-        "lost": lost,
-        "pending": pending,
-        "effectiveness": effectiveness,
-        "profit": profit,
-        "roi": roi
+
+        "total":
+            len(signals),
+
+        "won":
+            won,
+
+        "lost":
+            lost,
+
+        "pending":
+            pending,
+
+        "effectiveness":
+            effectiveness,
+
+        "profit":
+            profit,
+
+        "roi":
+            roi
     }
 
 
-# ============================================================
-# PANEL
-# ============================================================
+# =========================================================
+# PANEL PRINCIPAL
+# =========================================================
 
 def dashboard():
 
@@ -597,15 +694,15 @@ ${BET_AMOUNT:,.0f} COP
 
 ━━━━━━━━━━━━━━━━━━━━
 
-Selecciona una sección:
+👇 Selecciona una opción:
 """
 
 
-# ============================================================
+# =========================================================
 # RENDIMIENTO
-# ============================================================
+# =========================================================
 
-def rendimiento_text():
+def rendimiento():
 
     signals = load_signals()
 
@@ -617,43 +714,45 @@ def rendimiento_text():
 📊 RENDIMIENTO
 ━━━━━━━━━━━━━━━━━━━━
 
-📥 Total de señales
+📥 SEÑALES
 {stats['total']}
 
-✅ Ganadas
+✅ GANADAS
 {stats['won']}
 
-❌ Perdidas
+❌ PERDIDAS
 {stats['lost']}
 
-⏳ Pendientes
+⏳ PENDIENTES
 {stats['pending']}
 
-🎯 Efectividad
+━━━━━━━━━━━━━━━━━━━━
+
+🎯 EFECTIVIDAD
 {stats['effectiveness']:.1f}%
 
 📈 ROI
 {stats['roi']:.1f}%
 
-💰 Ganancia
+💰 GANANCIA
 ${stats['profit']:,.0f} COP
 
 ━━━━━━━━━━━━━━━━━━━━
 
-💵 Apuesta fija:
+💵 Apuesta por señal:
 ${BET_AMOUNT:,.0f} COP
 """
 
 
-# ============================================================
+# =========================================================
 # ESTRATEGIAS
-# ============================================================
+# =========================================================
 
-def estrategias_text():
+def estrategias():
 
     signals = load_signals()
 
-    strategies = {}
+    groups = {}
 
     for signal in signals:
 
@@ -662,30 +761,28 @@ def estrategias_text():
             "SIN ESTRATEGIA"
         )
 
-        if strategy not in strategies:
+        if strategy not in groups:
 
-            strategies[
-                strategy
-            ] = []
+            groups[strategy] = []
 
-        strategies[
+        groups[
             strategy
         ].append(
             signal
         )
 
-    if not strategies:
+    if not groups:
 
         return (
             "🎯 No hay estrategias registradas."
         )
 
     text = """
-🎯 RENDIMIENTO POR ESTRATEGIA
+🎯 ESTRATEGIAS
 ━━━━━━━━━━━━━━━━━━━━
 """
 
-    for strategy, items in strategies.items():
+    for strategy, items in groups.items():
 
         stats = calculate_stats(
             items
@@ -693,7 +790,7 @@ def estrategias_text():
 
         text += f"""
 
-🏷️ {strategy}
+🎯 {strategy}
 
 📥 Señales: {stats['total']}
 ✅ Ganadas: {stats['won']}
@@ -715,11 +812,11 @@ ${stats['profit']:,.0f} COP
     return text
 
 
-# ============================================================
+# =========================================================
 # PENDIENTES
-# ============================================================
+# =========================================================
 
-def pendientes_text():
+def pendientes():
 
     signals = load_signals()
 
@@ -728,27 +825,40 @@ def pendientes_text():
         s for s in signals
 
         if s.get(
-            "result"
+            "result",
+            "PENDIENTE"
         ) == "PENDIENTE"
 
     ]
 
     if not pending:
 
-        return (
-            "🟢 No hay apuestas pendientes."
-        )
+        return """
+⏳ PENDIENTES
+
+🟢 No tienes apuestas pendientes.
+"""
 
     text = """
 ⏳ APUESTAS PENDIENTES
 ━━━━━━━━━━━━━━━━━━━━
 """
 
-    for signal in pending:
+    for signal in pending[:30]:
+
+        odds = signal.get(
+            "odds"
+        )
+
+        odds_text = (
+            f"{odds:.2f}"
+            if odds
+            else "N/D"
+        )
 
         text += f"""
 
-🆔 #{signal['id']}
+🆔 #{signal.get('id')}
 
 🏆 {signal.get('league')}
 
@@ -756,49 +866,59 @@ def pendientes_text():
 
 🎯 {signal.get('strategy')}
 
-💰 Cuota:
-{signal.get('odds') or 'N/D'}
+💰 Cuota: {odds_text}
 
 ━━━━━━━━━━━━━━━━━━━━
 """
 
+    if len(pending) > 30:
+
+        text += (
+            f"\n📌 Hay "
+            f"{len(pending) - 30} "
+            f"pendientes adicionales."
+        )
+
     return text
 
 
-# ============================================================
+# =========================================================
 # CALENDARIO
-# ============================================================
+# =========================================================
 
-def calendario_text():
+def calendario():
 
     signals = load_signals()
 
-    grouped = {}
+    days = {}
 
     for signal in signals:
 
-        date = signal.get(
+        registered = signal.get(
             "registered_at",
             ""
-        )[:10]
+        )
 
-        if not date:
+        day = registered[:10]
+
+        if not day:
+
             continue
 
-        if date not in grouped:
+        if day not in days:
 
-            grouped[date] = []
+            days[day] = []
 
-        grouped[
-            date
+        days[
+            day
         ].append(
             signal
         )
 
-    if not grouped:
+    if not days:
 
         return (
-            "📅 No hay señales registradas."
+            "📅 No hay datos para el calendario."
         )
 
     text = """
@@ -806,27 +926,35 @@ def calendario_text():
 ━━━━━━━━━━━━━━━━━━━━
 """
 
-    for date in sorted(
-        grouped.keys(),
+    for day in sorted(
+        days.keys(),
         reverse=True
     ):
 
-        items = grouped[
-            date
-        ]
-
         stats = calculate_stats(
-            items
+            days[day]
         )
+
+        if stats["profit"] > 0:
+
+            icon = "🟢"
+
+        elif stats["profit"] < 0:
+
+            icon = "🔴"
+
+        else:
+
+            icon = "🟡"
 
         text += f"""
 
-📆 {date}
+{icon} {day}
 
-📥 {stats['total']} señales
-✅ {stats['won']} ganadas
-❌ {stats['lost']} perdidas
-⏳ {stats['pending']} pendientes
+📥 Señales: {stats['total']}
+✅ {stats['won']}
+❌ {stats['lost']}
+⏳ {stats['pending']}
 
 💰 ${stats['profit']:,.0f} COP
 
@@ -836,11 +964,11 @@ def calendario_text():
     return text
 
 
-# ============================================================
+# =========================================================
 # GANANCIAS
-# ============================================================
+# =========================================================
 
-def ganancias_text():
+def ganancias():
 
     signals = load_signals()
 
@@ -848,14 +976,14 @@ def ganancias_text():
         signals
     )
 
-    total_finished = (
+    finished = (
         stats["won"]
         +
         stats["lost"]
     )
 
-    total_staked = (
-        total_finished
+    invested = (
+        finished
         *
         BET_AMOUNT
     )
@@ -864,33 +992,35 @@ def ganancias_text():
 💰 GANANCIAS
 ━━━━━━━━━━━━━━━━━━━━
 
-💵 Apuesta fija
+💵 APUESTA FIJA
 ${BET_AMOUNT:,.0f} COP
 
-📥 Apuestas finalizadas
-{total_finished}
+📊 APUESTAS FINALIZADAS
+{finished}
 
-💰 Resultado acumulado
+💸 CAPITAL APOSTADO
+${invested:,.0f} COP
+
+━━━━━━━━━━━━━━━━━━━━
+
+💰 GANANCIA/PÉRDIDA
 ${stats['profit']:,.0f} COP
 
 📈 ROI
 {stats['roi']:.1f}%
 
-🎯 Efectividad
+🎯 EFECTIVIDAD
 {stats['effectiveness']:.1f}%
-
-💵 Capital apostado
-${total_staked:,.0f} COP
 
 ━━━━━━━━━━━━━━━━━━━━
 """
 
 
-# ============================================================
+# =========================================================
 # ESTADÍSTICAS
-# ============================================================
+# =========================================================
 
-def estadisticas_text():
+def estadisticas():
 
     signals = load_signals()
 
@@ -898,31 +1028,40 @@ def estadisticas_text():
         signals
     )
 
-    odds = [
+    odds = []
 
-        s.get("odds")
+    for signal in signals:
 
-        for s in signals
+        value = signal.get(
+            "odds"
+        )
 
-        if s.get("odds")
-    ]
+        if isinstance(
+            value,
+            (int, float)
+        ):
 
-    average_odds = (
+            odds.append(
+                value
+            )
 
-        sum(odds)
-        /
-        len(odds)
+    if odds:
 
-        if odds
+        average_odds = (
+            sum(odds)
+            /
+            len(odds)
+        )
 
-        else 0
-    )
+    else:
+
+        average_odds = 0
 
     return f"""
 📈 ESTADÍSTICAS
 ━━━━━━━━━━━━━━━━━━━━
 
-📥 Señales
+📥 Total señales
 {stats['total']}
 
 ✅ Ganadas
@@ -934,27 +1073,29 @@ def estadisticas_text():
 ⏳ Pendientes
 {stats['pending']}
 
+━━━━━━━━━━━━━━━━━━━━
+
 🎯 Efectividad
 {stats['effectiveness']:.1f}%
 
 📈 ROI
 {stats['roi']:.1f}%
 
-💰 Ganancia
-${stats['profit']:,.0f} COP
-
 🎲 Cuota promedio
 {average_odds:.2f}
+
+💰 Ganancia
+${stats['profit']:,.0f} COP
 
 ━━━━━━━━━━━━━━━━━━━━
 """
 
 
-# ============================================================
+# =========================================================
 # CONFIGURACIÓN
-# ============================================================
+# =========================================================
 
-def configuracion_text():
+def configuracion():
 
     return f"""
 ⚙️ CONFIGURACIÓN
@@ -964,11 +1105,11 @@ def configuracion_text():
 
 ${BET_AMOUNT:,.0f} COP
 
-📡 Recepción
+📥 Recepción de señales
 
-Telegram → Bot
+Telegram
 
-💾 Historial
+💾 Archivo de señales
 
 signals.json
 
@@ -978,14 +1119,14 @@ telegram_offset.json
 
 ━━━━━━━━━━━━━━━━━━━━
 
-ℹ️ Esta sección muestra
+Esta sección muestra
 la configuración actual.
 """
 
 
-# ============================================================
-# PROCESAR BOTONES
-# ============================================================
+# =========================================================
+# CALLBACKS DE BOTONES
+# =========================================================
 
 def process_callback(
     callback
@@ -1005,6 +1146,7 @@ def process_callback(
     )
 
     if not message:
+
         return
 
     chat_id = message[
@@ -1037,7 +1179,7 @@ def process_callback(
         edit_message(
             chat_id,
             message_id,
-            rendimiento_text(),
+            rendimiento(),
             back_keyboard()
         )
 
@@ -1048,7 +1190,7 @@ def process_callback(
         edit_message(
             chat_id,
             message_id,
-            estrategias_text(),
+            estrategias(),
             back_keyboard()
         )
 
@@ -1059,7 +1201,7 @@ def process_callback(
         edit_message(
             chat_id,
             message_id,
-            calendario_text(),
+            calendario(),
             back_keyboard()
         )
 
@@ -1070,7 +1212,7 @@ def process_callback(
         edit_message(
             chat_id,
             message_id,
-            pendientes_text(),
+            pendientes(),
             back_keyboard()
         )
 
@@ -1081,7 +1223,7 @@ def process_callback(
         edit_message(
             chat_id,
             message_id,
-            ganancias_text(),
+            ganancias(),
             back_keyboard()
         )
 
@@ -1092,7 +1234,7 @@ def process_callback(
         edit_message(
             chat_id,
             message_id,
-            estadisticas_text(),
+            estadisticas(),
             back_keyboard()
         )
 
@@ -1103,246 +1245,16 @@ def process_callback(
         edit_message(
             chat_id,
             message_id,
-            configuracion_text(),
+            configuracion(),
             back_keyboard()
         )
 
         return
 
 
-# ============================================================
-# EXTRAER DATOS
-# ============================================================
-
-def extract(
-    text,
-    patterns,
-    default="No identificado"
-):
-
-    if isinstance(
-        patterns,
-        str
-    ):
-
-        patterns = [
-            patterns
-        ]
-
-    for pattern in patterns:
-
-        match = re.search(
-            pattern,
-            text,
-            re.IGNORECASE
-        )
-
-        if match:
-
-            return match.group(
-                1
-            ).strip()
-
-    return default
-
-
-def extract_strategy(text):
-
-    value = extract(
-        text,
-        [
-            r"ESTRATEGIA\s*:\s*(.+)",
-            r"RESULTADO DESEADO\s*:\s*(.+)"
-        ],
-        ""
-    )
-
-    if value:
-
-        return value
-
-    lower = text.lower()
-
-    if "más de 3.5" in lower:
-
-        return "Más de 3.5 goles"
-
-    if "más de 2.5" in lower:
-
-        return "Más de 2.5 goles"
-
-    if (
-        "ambos marcan" in lower
-        or
-        "btts" in lower
-    ):
-
-        return "Ambos Marcan"
-
-    if "victoria local" in lower:
-
-        return "Victoria Local"
-
-    if "victoria visitante" in lower:
-
-        return "Victoria Visitante"
-
-    return "SIN ESTRATEGIA"
-
-
-def extract_odds(text):
-
-    value = extract(
-        text,
-        [
-            r"CUOTA\s*:\s*([\d.,]+)",
-            r"bet365\s*:\s*([\d.,]+)"
-        ],
-        ""
-    )
-
-    if not value:
-
-        return None
-
-    try:
-
-        return float(
-            value.replace(
-                ",",
-                "."
-            )
-        )
-
-    except Exception:
-
-        return None
-
-
-# ============================================================
-# DETECTAR ALERTA
-# ============================================================
-
-def is_bet_alert(text):
-
-    if not text:
-        return False
-
-    if text.startswith("/"):
-
-        return False
-
-    lower = text.lower()
-
-    keywords = [
-
-        "liga:",
-        "partido:",
-        "fecha:",
-        "estrategia:",
-        "resultado deseado:",
-        "cuota:",
-        "success betmines:",
-        "roi betmines:",
-        "picks:",
-        "ranking:",
-        "🏆",
-        "🆚",
-        "🗓"
-    ]
-
-    found = 0
-
-    for keyword in keywords:
-
-        if keyword in lower:
-
-            found += 1
-
-    return found >= 2
-
-
-# ============================================================
-# REGISTRAR SEÑAL
-# ============================================================
-
-def register_signal(text):
-
-    signals = load_signals()
-
-    signal = {
-
-        "id":
-            len(signals) + 1,
-
-        "registered_at":
-            datetime.now(
-                timezone.utc
-            ).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            ),
-
-        "league":
-            extract(
-                text,
-                [
-                    r"LIGA\s*:\s*(.+)",
-                    r"🏆\s*(.+)"
-                ]
-            ),
-
-        "match":
-            extract(
-                text,
-                [
-                    r"PARTIDO\s*:\s*(.+)",
-                    r"🆚\s*(.+)"
-                ]
-            ),
-
-        "date":
-            extract(
-                text,
-                [
-                    r"FECHA\s*:\s*(.+)",
-                    r"🗓\s*(.+)"
-                ]
-            ),
-
-        "strategy":
-            extract_strategy(
-                text
-            ),
-
-        "odds":
-            extract_odds(
-                text
-            ),
-
-        "result":
-            "PENDIENTE",
-
-        "profit":
-            0,
-
-        "raw_message":
-            text
-    }
-
-    signals.append(
-        signal
-    )
-
-    save_signals(
-        signals
-    )
-
-    return signal
-
-
-# ============================================================
-# MENSAJES
-# ============================================================
+# =========================================================
+# COMANDOS
+# =========================================================
 
 def process_message(
     message
@@ -1363,17 +1275,21 @@ def process_message(
     ).strip()
 
     if not chat_id:
+
         return
 
     if not text:
+
         return
 
     print(
         "Procesando:",
-        text[:100]
+        text
     )
 
     command = text.split()[0].lower()
+
+    # START
 
     if command == "/start":
 
@@ -1385,23 +1301,30 @@ def process_message(
 
         return
 
+    # PANEL
+
     if command == "/panel":
 
-        send_message(
+        result = send_message(
             chat_id,
             dashboard(),
             main_keyboard()
         )
 
+        print(
+            "Resultado panel:",
+            result
+        )
+
         return
 
-    # Comandos antiguos también funcionan
+    # COMANDOS ANTIGUOS
 
     if command == "/estrategias":
 
         send_message(
             chat_id,
-            estrategias_text(),
+            estrategias(),
             back_keyboard()
         )
 
@@ -1411,7 +1334,7 @@ def process_message(
 
         send_message(
             chat_id,
-            pendientes_text(),
+            pendientes(),
             back_keyboard()
         )
 
@@ -1421,13 +1344,13 @@ def process_message(
 
         send_message(
             chat_id,
-            calendario_text(),
+            calendario(),
             back_keyboard()
         )
 
         return
 
-    # Ignorar comandos desconocidos
+    # COMANDOS DESCONOCIDOS
 
     if text.startswith("/"):
 
@@ -1438,7 +1361,7 @@ def process_message(
 
         return
 
-    # Señal
+    # ALERTA
 
     if not is_bet_alert(
         text
@@ -1459,14 +1382,13 @@ def process_message(
         "odds"
     )
 
-    odds_text = (
+    if odds:
 
-        f"{odds:.2f}"
+        odds_text = f"{odds:.2f}"
 
-        if odds
+    else:
 
-        else "N/D"
-    )
+        odds_text = "N/D"
 
     send_message(
         chat_id,
@@ -1486,21 +1408,23 @@ def process_message(
 
 💰 Cuota: {odds_text}
 
-⏳ PENDIENTE
+⏳ ESTADO: PENDIENTE
 
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 Pulsa /panel para
-ver el dashboard.
+📊 Usa /panel para abrir
+el centro de control.
 """
     )
 
 
-# ============================================================
-# RECIBIR ACTUALIZACIONES
-# ============================================================
+# =========================================================
+# TELEGRAM UPDATES
+# =========================================================
 
-def get_updates(offset=None):
+def get_updates(
+    offset=None
+):
 
     params = {
         "timeout": 5,
@@ -1521,20 +1445,20 @@ def get_updates(offset=None):
             timeout=15
         )
 
-        data = response.json()
+        result = response.json()
 
-        if not data.get(
+        print(
+            "getUpdates:",
+            result
+        )
+
+        if not result.get(
             "ok"
         ):
 
-            print(
-                "Telegram error:",
-                data
-            )
-
             return []
 
-        return data.get(
+        return result.get(
             "result",
             []
         )
@@ -1542,16 +1466,16 @@ def get_updates(offset=None):
     except Exception as e:
 
         print(
-            "Error getUpdates:",
+            "ERROR getUpdates:",
             e
         )
 
         return []
 
 
-# ============================================================
+# =========================================================
 # MAIN
-# ============================================================
+# =========================================================
 
 def main():
 
@@ -1560,11 +1484,11 @@ def main():
     )
 
     print(
-        "     APUESTASMURCIA BOT"
+        "       APUESTASMURCIA BOT"
     )
 
     print(
-        "     PANEL CON BOTONES"
+        "       DASHBOARD CON BOTONES"
     )
 
     print(
@@ -1603,6 +1527,13 @@ def main():
 
             elif "callback_query" in update:
 
+                print(
+                    "Botón pulsado:",
+                    update[
+                        "callback_query"
+                    ].get("data")
+                )
+
                 process_callback(
                     update["callback_query"]
                 )
@@ -1610,9 +1541,13 @@ def main():
         except Exception as e:
 
             print(
-                "Error procesando:",
+                "ERROR procesando update:",
                 e
             )
+
+        # MUY IMPORTANTE:
+        # Guardamos el offset después
+        # de procesar el mensaje/botón.
 
         if update_id is not None:
 
@@ -1621,7 +1556,15 @@ def main():
             )
 
     print(
+        "===================================="
+    )
+
+    print(
         "Ejecución terminada."
+    )
+
+    print(
+        "===================================="
     )
 
 
