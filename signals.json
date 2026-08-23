@@ -1258,5 +1258,26 @@
     "profit": 0,
     "result": null,
     "original_alert": "💎  mas de 3,5 goles \n\n🏆USA MLS Next Pro\n🆚  Ventura County - Portland Timbers II\n🗓 lun, 24 ago 2026 02:00\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 40 \n\n📈 Posición en el ranking: 4 - 2\n\n🎯 Resultado deseado: Más de 3.5 goles\n\n🟢 pinnacle: 2.27\n\nCuotas:🎯 1X2\n1 2.58  X 3.26  2 2.36\n\n🎯 Número de goles\n+2.5 1.54  -2.5 2.27\n\n🎯 Ambos equipos marcan\nSI 1.44  NO 2.45"
+  },
+  {
+    "id": 1787515065405,
+    "fecha_registro": "2026-08-23 14:57:45",
+    "timestamp": "2026-08-23T19:57:45.405271+00:00",
+    "home": "Austin II",
+    "away": "San Jose Earthquakes II",
+    "liga": "USA MLS Next Pro",
+    "fecha_partido": "lun, 24 ago 2026 00:30",
+    "estrategia": "BTTS",
+    "cuota": 2.71,
+    "stake": 5000,
+    "resultado": "pendiente",
+    "ganancia": 0,
+    "fixture_id": null,
+    "goles_home": null,
+    "goles_away": null,
+    "goles_home_ht": null,
+    "goles_away_ht": null,
+    "fecha_resultado": null,
+    "texto_original": "💎  mas de 3,5 goles \n\n🏆USA MLS Next Pro\n🆚  Austin II - San Jose Earthquakes II\n🗓 lun, 24 ago 2026 00:30\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 39 \n\n📈 Posición en el ranking: 1 - 7\n\n🎯 Resultado deseado: Más de 3.5 goles\n\n🟢 pinnacle: 2.71\n\nCuotas:🎯 1X2\n1 1.77  X 3.57  2 3.94\n\n🎯 Número de goles\n+2.5 1.71  -2.5 2.06\n\n🎯 Ambos equipos marcan\nSI 1.53  NO 2.30"
   }
 ]
