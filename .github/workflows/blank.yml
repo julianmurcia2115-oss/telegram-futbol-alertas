@@ -4,21 +4,17 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write
 
 jobs:
   football-alerts:
 
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
     steps:
-
-      # ==========================================
-      # DESCARGAR REPOSITORIO
-      # ==========================================
 
       - name: Descargar código
         uses: actions/checkout@v4
@@ -26,39 +22,22 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      # ==========================================
-      # CONFIGURAR PYTHON
-      # ==========================================
-
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      # ==========================================
-      # INSTALAR DEPENDENCIAS
-      # ==========================================
 
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
           pip install requests
 
-      # ==========================================
-      # EJECUTAR BOT
-      # ==========================================
-
       - name: Ejecutar Football Alerts
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
         run: |
           python football_alerts.py
-
-      # ==========================================
-      # GUARDAR DATOS
-      # ==========================================
 
       - name: Guardar datos
         if: always()
@@ -68,53 +47,18 @@ jobs:
           git config user.email "football-alerts-bot@users.noreply.github.com"
 
           echo "===================================="
-          echo "💾 GUARDANDO DATOS"
+          echo "GUARDANDO DATOS"
           echo "===================================="
-
-          git status
-
-          # --------------------------------------
-          # Traer cualquier cambio nuevo
-          # --------------------------------------
-
-          git fetch origin main
-
-          # --------------------------------------
-          # Guardar nuestros cambios temporalmente
-          # --------------------------------------
 
           git add signals.json bot_state.json
 
           if git diff --cached --quiet; then
-            echo "ℹ️ No hay cambios nuevos"
+            echo "No hay cambios nuevos"
           else
-            git commit -m "Actualizar apuestas y estadísticas"
+            git commit -m "Actualizar datos del bot"
+            git push origin main
           fi
-
-          # --------------------------------------
-          # REVISAR CAMBIOS REMOTOS
-          # --------------------------------------
-
-          git pull --rebase origin main
-
-          # --------------------------------------
-          # VOLVER A AGREGAR DATOS DESPUÉS DEL REBASE
-          # --------------------------------------
-
-          git add signals.json bot_state.json
-
-          if git diff --cached --quiet; then
-            echo "ℹ️ No hay cambios para subir"
-          else
-            git commit -m "Actualizar datos del panel"
-          fi
-
-          # --------------------------------------
-          # SUBIR
-          # --------------------------------------
-
-          git push origin main
 
           echo "===================================="
-          echo "✅ DATOS GUARDADOS CORRECTAMENTE"
+          echo "DATOS GUARDADOS"
           echo "===================================="
