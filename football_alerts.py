@@ -5,10 +5,6 @@ import time
 import requests
 from datetime import datetime, timezone
 
-# ============================================================
-# CONFIGURACION
-# ============================================================
-
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -16,32 +12,22 @@ TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 DATA_FILE = "signals.json"
 
 
-# ============================================================
-# BASE DE DATOS
-# ============================================================
-
 def load_signals():
 
     if not os.path.exists(DATA_FILE):
         return []
 
     try:
-
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-
             return json.load(f)
 
-    except Exception as e:
-
-        print("Error leyendo señales:", e)
-
+    except Exception:
         return []
 
 
 def save_signals(signals):
 
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-
         json.dump(
             signals,
             f,
@@ -50,372 +36,93 @@ def save_signals(signals):
         )
 
 
-# ============================================================
-# TELEGRAM
-# ============================================================
-
 def send_message(chat_id, text):
 
     try:
 
-        response = requests.post(
-
+        r = requests.post(
             f"{TELEGRAM_URL}/sendMessage",
-
             data={
                 "chat_id": chat_id,
                 "text": text
             },
-
             timeout=30
         )
 
-        if not response.ok:
-
-            print(
-                "Error Telegram:",
-                response.text
-            )
-
-        return response.ok
+        return r.ok
 
     except Exception as e:
 
-        print(
-            "Error enviando Telegram:",
-            e
-        )
+        print("Error Telegram:", e)
 
         return False
 
 
-# ============================================================
-# EXTRAER LIGA
-# ============================================================
-
-def extract_league(text):
+def extract(text, pattern, default="No identificado"):
 
     match = re.search(
-        r"🏆\s*(.+)",
-        text
+        pattern,
+        text,
+        re.IGNORECASE
     )
 
     if match:
-
         return match.group(1).strip()
 
-    return "No identificada"
+    return default
 
 
-# ============================================================
-# EXTRAER PARTIDO
-# ============================================================
+def extract_strategy(text):
 
-def extract_match(text):
-
-    match = re.search(
-        r"🆚\s*(.+?)\s*-\s*(.+)",
-        text
-    )
-
-    if match:
-
-        home = match.group(1).strip()
-
-        away = match.group(2).strip()
-
-        return f"{home} vs {away}"
-
-    return "No identificado"
-
-
-# ============================================================
-# EXTRAER FECHA
-# ============================================================
-
-def extract_datetime(text):
-
-    match = re.search(
-        r"🗓\s*(.+)",
-        text
-    )
-
-    if match:
-
-        return match.group(1).strip()
-
-    return "No identificada"
-
-
-# ============================================================
-# SUCCESS PERCENTAGE
-# ============================================================
-
-def extract_success(text):
-
-    match = re.search(
-        r"Success Percentage:\s*([\d.,]+)\s*%",
+    # Formato principal
+    result = extract(
         text,
-        re.IGNORECASE
+        r"Resultado\s*deseado\s*:\s*(.+)"
     )
 
-    if match:
+    if result != "No identificado":
+        return result
 
-        return float(
-            match.group(1).replace(",", ".")
-        )
+    # Respaldo para líneas con 🎯
+    for line in text.splitlines():
 
-    return None
+        line = line.strip()
 
+        if "🎯" in line and ":" in line:
 
-# ============================================================
-# ROI
-# ============================================================
+            value = line.split(":", 1)[1].strip()
 
-def extract_roi(text):
-
-    match = re.search(
-        r"ROI:\s*([\d.,+-]+)\s*%",
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-
-        return float(
-            match.group(1).replace(",", ".")
-        )
-
-    return None
-
-
-# ============================================================
-# PICKS
-# ============================================================
-
-def extract_picks(text):
-
-    match = re.search(
-        r"picks:\s*(\d+)",
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-
-        return int(
-            match.group(1)
-        )
-
-    return None
-
-
-# ============================================================
-# RANKING
-# ============================================================
-
-def extract_ranking(text):
-
-    match = re.search(
-        r"Posición en el ranking:\s*(.+)",
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-
-        return match.group(1).strip()
-
-    return "No identificado"
-
-
-# ============================================================
-# RESULTADO DESEADO
-# ============================================================
-
-def extract_target(text):
-
-    match = re.search(
-        r"Resultado deseado:\s*(.+)",
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-
-        target = match.group(1).strip()
-
-        if target:
-
-            return target
+            if value:
+                return value
 
     return "SIN ESTRATEGIA"
 
 
-# ============================================================
-# ESTRATEGIA
-# ============================================================
-#
-# IMPORTANTE:
-#
-# NO HAY UNA LISTA FIJA.
-#
-# CUALQUIER TEXTO QUE APAREZCA DESPUES DE
-#
-# Resultado deseado:
-#
-# SE GUARDA AUTOMATICAMENTE COMO ESTRATEGIA.
-#
-# ============================================================
+def extract_odds(text):
 
-def detect_strategy(target):
-
-    if target:
-
-        return target.strip()
-
-    return "SIN ESTRATEGIA"
-
-
-# ============================================================
-# CUOTA PRINCIPAL
-# ============================================================
-
-def extract_main_odds(text):
-
-    match = re.search(
+    value = extract(
+        text,
         r"bet365:\s*([\d.,]+)",
-        text,
-        re.IGNORECASE
+        ""
     )
 
-    if match:
+    if not value:
+        return None
 
+    try:
         return float(
-            match.group(1).replace(",", ".")
+            value.replace(",", ".")
         )
 
-    return None
-
-
-# ============================================================
-# CUOTAS 1X2
-# ============================================================
-
-def extract_1x2(text):
-
-    match = re.search(
-        r"1\s+([\d.,]+)\s+X\s+([\d.,]+)\s+2\s+([\d.,]+)",
-        text
-    )
-
-    if not match:
-
+    except Exception:
         return None
 
-    return {
-
-        "home": float(
-            match.group(1).replace(",", ".")
-        ),
-
-        "draw": float(
-            match.group(2).replace(",", ".")
-        ),
-
-        "away": float(
-            match.group(3).replace(",", ".")
-        )
-    }
-
-
-# ============================================================
-# OVER UNDER
-# ============================================================
-
-def extract_over_under(text):
-
-    match = re.search(
-        r"\+2\.5\s+([\d.,]+)\s+-2\.5\s+([\d.,]+)",
-        text
-    )
-
-    if not match:
-
-        return None
-
-    return {
-
-        "over25": float(
-            match.group(1).replace(",", ".")
-        ),
-
-        "under25": float(
-            match.group(2).replace(",", ".")
-        )
-    }
-
-
-# ============================================================
-# BTTS
-# ============================================================
-
-def extract_btts(text):
-
-    match = re.search(
-        r"SI\s+([\d.,]+)\s+NO\s+([\d.,]+)",
-        text
-    )
-
-    if not match:
-
-        return None
-
-    return {
-
-        "yes": float(
-            match.group(1).replace(",", ".")
-        ),
-
-        "no": float(
-            match.group(2).replace(",", ".")
-        )
-    }
-
-
-# ============================================================
-# REGISTRAR SEÑAL
-# ============================================================
 
 def register_signal(text):
 
     signals = load_signals()
 
-    league = extract_league(text)
-
-    match = extract_match(text)
-
-    event_datetime = extract_datetime(text)
-
-    success = extract_success(text)
-
-    roi = extract_roi(text)
-
-    picks = extract_picks(text)
-
-    ranking = extract_ranking(text)
-
-    target = extract_target(text)
-
-    strategy = detect_strategy(target)
-
-    odds = extract_main_odds(text)
-
-    odds_1x2 = extract_1x2(text)
-
-    odds_goals = extract_over_under(text)
-
-    odds_btts = extract_btts(text)
+    strategy = extract_strategy(text)
 
     signal = {
 
@@ -428,31 +135,24 @@ def register_signal(text):
                 "%Y-%m-%d %H:%M:%S"
             ),
 
-        "league": league,
+        "league": extract(
+            text,
+            r"🏆\s*(.+)"
+        ),
 
-        "match": match,
+        "match": extract(
+            text,
+            r"🆚\s*(.+)"
+        ),
 
-        "event_datetime": event_datetime,
+        "date": extract(
+            text,
+            r"🗓\s*(.+)"
+        ),
 
         "strategy": strategy,
 
-        "target": target,
-
-        "odds": odds,
-
-        "success_percentage": success,
-
-        "betmines_roi": roi,
-
-        "picks": picks,
-
-        "ranking": ranking,
-
-        "odds_1x2": odds_1x2,
-
-        "odds_goals": odds_goals,
-
-        "odds_btts": odds_btts,
+        "odds": extract_odds(text),
 
         "result": "PENDIENTE",
 
@@ -466,49 +166,14 @@ def register_signal(text):
     return signal
 
 
-# ============================================================
-# MOSTRAR SEÑAL
-# ============================================================
-
 def format_signal(signal):
 
-    if signal["odds"] is not None:
+    odds = signal["odds"]
 
-        odds = f"{signal['odds']:.2f}"
-
+    if odds is None:
+        odds_text = "N/D"
     else:
-
-        odds = "N/D"
-
-
-    if signal["success_percentage"] is not None:
-
-        success = (
-            f"{signal['success_percentage']:.1f}%"
-        )
-
-    else:
-
-        success = "N/D"
-
-
-    if signal["betmines_roi"] is not None:
-
-        roi = (
-            f"{signal['betmines_roi']:.1f}%"
-        )
-
-    else:
-
-        roi = "N/D"
-
-
-    picks = (
-        signal["picks"]
-        if signal["picks"] is not None
-        else "N/D"
-    )
-
+        odds_text = f"{odds:.2f}"
 
     return f"""
 SEÑAL REGISTRADA
@@ -522,28 +187,13 @@ PARTIDO:
 {signal['match']}
 
 FECHA:
-{signal['event_datetime']}
+{signal['date']}
 
 ESTRATEGIA:
 {signal['strategy']}
 
-RESULTADO DESEADO:
-{signal['target']}
-
 CUOTA:
-{odds}
-
-SUCCESS BETMINES:
-{success}
-
-ROI BETMINES:
-{roi}
-
-PICKS:
-{picks}
-
-RANKING:
-{signal['ranking']}
+{odds_text}
 
 ESTADO:
 PENDIENTE
@@ -553,22 +203,12 @@ Comandos:
 /panel
 /estrategias
 /pendientes
-/hoy
 """
 
-
-# ============================================================
-# PANEL
-# ============================================================
 
 def panel():
 
     signals = load_signals()
-
-    if not signals:
-
-        return "No hay señales registradas."
-
 
     total = len(signals)
 
@@ -592,8 +232,7 @@ def panel():
 
     finished = won + lost
 
-
-    if finished > 0:
+    if finished:
 
         effectiveness = (
             won / finished
@@ -603,341 +242,240 @@ def panel():
 
         effectiveness = 0
 
-
     profit = 0
 
+    for s in signals:
 
-    for signal in signals:
+        odds = s.get("odds")
 
-        if signal["result"] == "GANADA":
-
-            odds = signal.get("odds")
+        if s["result"] == "GANADA":
 
             if odds:
-
-                profit += odds - 1
-
+                profit += 5000 * (odds - 1)
             else:
+                profit += 5000
 
-                profit += 1
+        elif s["result"] == "PERDIDA":
 
-
-        elif signal["result"] == "PERDIDA":
-
-            profit -= 1
-
-
-    if total > 0:
-
-        roi = (
-            profit / total
-        ) * 100
-
-    else:
-
-        roi = 0
-
+            profit -= 5000
 
     return f"""
-PANEL DE RENDIMIENTO
+==============================
+      APUESTASMURCIA
+        DASHBOARD
+==============================
+
+APUESTA FIJA:
+$5.000 COP
 
 SEÑALES: {total}
 
 GANADAS: {won}
-
 PERDIDAS: {lost}
-
 PENDIENTES: {pending}
 
 EFECTIVIDAD:
 {effectiveness:.1f}%
 
-BENEFICIO:
-{profit:+.2f} unidades
+GANANCIA:
+${profit:,.0f} COP
 
-ROI:
-{roi:+.1f}%
+==============================
 """
 
-
-# ============================================================
-# ESTRATEGIAS
-# ============================================================
 
 def strategies_panel():
 
     signals = load_signals()
 
-    if not signals:
-
-        return "No hay señales registradas."
-
-
     strategies = {}
 
+    for s in signals:
 
-    for signal in signals:
-
-        strategy = signal.get(
+        strategy = s.get(
             "strategy",
             "SIN ESTRATEGIA"
         )
 
-
         if strategy not in strategies:
 
             strategies[strategy] = {
-
                 "total": 0,
-
                 "won": 0,
-
                 "lost": 0,
-
                 "pending": 0,
-
                 "profit": 0
-
             }
 
+        data = strategies[strategy]
 
-        strategies[strategy]["total"] += 1
+        data["total"] += 1
 
+        odds = s.get("odds")
 
-        if signal["result"] == "GANADA":
+        if s["result"] == "GANADA":
 
-            strategies[strategy]["won"] += 1
-
-            odds = signal.get("odds")
+            data["won"] += 1
 
             if odds:
-
-                strategies[strategy]["profit"] += (
-                    odds - 1
+                data["profit"] += (
+                    5000 * (odds - 1)
                 )
-
             else:
+                data["profit"] += 5000
 
-                strategies[strategy]["profit"] += 1
+        elif s["result"] == "PERDIDA":
 
+            data["lost"] += 1
 
-        elif signal["result"] == "PERDIDA":
-
-            strategies[strategy]["lost"] += 1
-
-            strategies[strategy]["profit"] -= 1
-
+            data["profit"] -= 5000
 
         else:
 
-            strategies[strategy]["pending"] += 1
+            data["pending"] += 1
 
+    output = """
+==============================
+   RENDIMIENTO POR ESTRATEGIA
+==============================
+"""
 
-    output = "RENDIMIENTO POR ESTRATEGIA\n\n"
-
-
-    ordered = sorted(
-
-        strategies.items(),
-
-        key=lambda x: x[1]["total"],
-
-        reverse=True
-
-    )
-
-
-    for strategy, data in ordered:
+    for strategy, data in strategies.items():
 
         finished = (
             data["won"]
             + data["lost"]
         )
 
+        if finished:
 
-        if finished > 0:
-
-            percentage = (
+            effectiveness = (
                 data["won"]
                 / finished
             ) * 100
 
         else:
 
-            percentage = 0
+            effectiveness = 0
 
+        output += f"""
 
-        output += (
+ESTRATEGIA:
+{strategy}
 
-            f"ESTRATEGIA: {strategy}\n"
+SEÑALES: {data['total']}
 
-            f"Señales: {data['total']}\n"
+GANADAS: {data['won']}
+PERDIDAS: {data['lost']}
+PENDIENTES: {data['pending']}
 
-            f"Ganadas: {data['won']}\n"
+EFECTIVIDAD:
+{effectiveness:.1f}%
 
-            f"Perdidas: {data['lost']}\n"
+GANANCIA:
+${data['profit']:,.0f} COP
 
-            f"Pendientes: {data['pending']}\n"
-
-            f"Efectividad: "
-            f"{percentage:.1f}%\n"
-
-            f"Beneficio: "
-            f"{data['profit']:+.2f}\n\n"
-
-        )
-
+------------------------------
+"""
 
     return output
 
-
-# ============================================================
-# PENDIENTES
-# ============================================================
 
 def pending_panel():
 
     signals = load_signals()
 
-
     pending = [
 
-        s
-
-        for s in signals
-
+        s for s in signals
         if s["result"] == "PENDIENTE"
 
     ]
-
 
     if not pending:
 
         return "No hay señales pendientes."
 
+    output = """
+==============================
+      SEÑALES PENDIENTES
+==============================
+"""
 
-    output = "SEÑALES PENDIENTES\n\n"
+    for s in pending:
 
+        output += f"""
 
-    for signal in pending[-20:]:
+#{s['id']}
+{s['match']}
 
-        odds = signal.get("odds")
+Estrategia:
+{s['strategy']}
 
+Cuota:
+{s.get('odds') or 'N/D'}
 
-        if odds:
-
-            odds_text = f"{odds:.2f}"
-
-        else:
-
-            odds_text = "N/D"
-
-
-        output += (
-
-            f"#{signal['id']}\n"
-
-            f"{signal['match']}\n"
-
-            f"Estrategia: "
-            f"{signal['strategy']}\n"
-
-            f"Cuota: {odds_text}\n"
-
-            f"{signal['event_datetime']}\n\n"
-
-        )
-
+------------------------------
+"""
 
     return output
 
-
-# ============================================================
-# ACTUALIZAR RESULTADO
-# ============================================================
 
 def update_result(signal_id, result):
 
     signals = load_signals()
 
+    for s in signals:
 
-    for signal in signals:
+        if s["id"] == signal_id:
 
-        if signal["id"] == signal_id:
-
-            signal["result"] = result
+            s["result"] = result
 
             save_signals(signals)
 
-            return signal
+            return True
 
+    return False
 
-    return None
-
-
-# ============================================================
-# PROCESAR MENSAJE
-# ============================================================
 
 def process_message(message):
 
-    chat = message.get(
-        "chat",
-        {}
-    )
-
-    chat_id = chat.get("id")
-
+    chat_id = message["chat"]["id"]
 
     text = message.get(
         "text",
         ""
     ).strip()
 
-
     if not text:
-
         return
-
-
-    # START
 
     if text == "/start":
 
         send_message(
-
             chat_id,
-
             """
 APUESTASMURCIA BOT
 
-BOT ACTIVO.
+Estoy activo.
 
 Envíame cualquier alerta
-copiada de BetMines.
-
-El bot reconoce automaticamente
-cualquier estrategia.
+de BetMines.
 
 Comandos:
 
 /panel
 /estrategias
 /pendientes
-/hoy
 
-Resultados:
+Para resultados:
 
 /ganada ID
 /perdida ID
 """
-
         )
 
         return
-
-
-    # PANEL
 
     if text == "/panel":
 
@@ -948,9 +486,6 @@ Resultados:
 
         return
 
-
-    # ESTRATEGIAS
-
     if text == "/estrategias":
 
         send_message(
@@ -959,9 +494,6 @@ Resultados:
         )
 
         return
-
-
-    # PENDIENTES
 
     if text == "/pendientes":
 
@@ -972,78 +504,10 @@ Resultados:
 
         return
 
-
-    # HOY
-
-    if text == "/hoy":
-
-        today = datetime.now(
-            timezone.utc
-        ).strftime("%Y-%m-%d")
-
-
-        signals = load_signals()
-
-
-        today_signals = [
-
-            s
-
-            for s in signals
-
-            if s["registered_at"].startswith(today)
-
-        ]
-
-
-        if not today_signals:
-
-            send_message(
-                chat_id,
-                "No hay señales registradas hoy."
-            )
-
-            return
-
-
-        output = "SEÑALES DE HOY\n\n"
-
-
-        for signal in today_signals:
-
-            output += (
-
-                f"#{signal['id']}\n"
-
-                f"{signal['match']}\n"
-
-                f"Estrategia: "
-                f"{signal['strategy']}\n"
-
-                f"Cuota: "
-                f"{signal['odds'] or 'N/D'}\n"
-
-                f"Estado: "
-                f"{signal['result']}\n\n"
-
-            )
-
-
-        send_message(
-            chat_id,
-            output
-        )
-
-        return
-
-
-    # GANADA
-
     match = re.match(
         r"^/ganada\s+(\d+)$",
         text
     )
-
 
     if match:
 
@@ -1051,22 +515,14 @@ Resultados:
             match.group(1)
         )
 
-
-        signal = update_result(
+        if update_result(
             signal_id,
             "GANADA"
-        )
-
-
-        if signal:
+        ):
 
             send_message(
-
                 chat_id,
-
-                f"Señal #{signal_id} "
-                f"marcada como GANADA."
-
+                f"Señal #{signal_id} marcada como GANADA."
             )
 
         else:
@@ -1076,40 +532,27 @@ Resultados:
                 "No existe esa señal."
             )
 
-
         return
-
-
-    # PERDIDA
 
     match = re.match(
         r"^/perdida\s+(\d+)$",
         text
     )
 
-
     if match:
 
         signal_id = int(
             match.group(1)
         )
 
-
-        signal = update_result(
+        if update_result(
             signal_id,
             "PERDIDA"
-        )
-
-
-        if signal:
+        ):
 
             send_message(
-
                 chat_id,
-
-                f"Señal #{signal_id} "
-                f"marcada como PERDIDA."
-
+                f"Señal #{signal_id} marcada como PERDIDA."
             )
 
         else:
@@ -1119,34 +562,18 @@ Resultados:
                 "No existe esa señal."
             )
 
-
         return
-
-
-    # ========================================================
-    # CUALQUIER OTRO MENSAJE
-    # SE CONSIDERA UNA ALERTA DE BETMINES
-    # ========================================================
 
     signal = register_signal(text)
 
-
     send_message(
-
         chat_id,
-
         format_signal(signal)
-
     )
 
 
-# ============================================================
-# INICIAR BOT
-# ============================================================
-
 def run_bot():
 
-    print("")
     print("======================================")
     print("      APUESTASMURCIA BOT")
     print("======================================")
@@ -1154,9 +581,7 @@ def run_bot():
     print("Esperando alertas de BetMines...")
     print("======================================")
 
-
     offset = None
-
 
     while True:
 
@@ -1166,25 +591,17 @@ def run_bot():
                 "timeout": 30
             }
 
-
             if offset is not None:
 
                 params["offset"] = offset
 
-
-            response = requests.get(
-
+            r = requests.get(
                 f"{TELEGRAM_URL}/getUpdates",
-
                 params=params,
-
                 timeout=40
-
             )
 
-
-            data = response.json()
-
+            data = r.json()
 
             if not data.get("ok"):
 
@@ -1197,7 +614,6 @@ def run_bot():
 
                 continue
 
-
             for update in data.get(
                 "result",
                 []
@@ -1207,27 +623,21 @@ def run_bot():
                     update["update_id"] + 1
                 )
 
-
                 if "message" in update:
 
                     process_message(
                         update["message"]
                     )
 
-
         except Exception as e:
 
             print(
-                "Error polling:",
+                "Error:",
                 e
             )
 
             time.sleep(5)
 
-
-# ============================================================
-# EJECUTAR
-# ============================================================
 
 if __name__ == "__main__":
 
