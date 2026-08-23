@@ -20,7 +20,6 @@ OFFSET_FILE = "telegram_offset.json"
 
 BET_AMOUNT = 5000
 
-# 🇨🇴 HORA OFICIAL DE COLOMBIA
 COLOMBIA_TZ = ZoneInfo("America/Bogota")
 
 
@@ -37,9 +36,7 @@ def colombia_date():
 
 
 def colombia_datetime():
-    return colombia_now().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    return colombia_now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 # =========================================================
@@ -81,11 +78,7 @@ def telegram_request(method, data=None):
         }
 
 
-def send_message(
-    chat_id,
-    text,
-    keyboard=None
-):
+def send_message(chat_id, text, keyboard=None):
 
     data = {
         "chat_id": chat_id,
@@ -207,7 +200,7 @@ def save_signals(signals):
 
 
 # =========================================================
-# OFFSET
+# OFFSET TELEGRAM
 # =========================================================
 
 def load_offset():
@@ -367,7 +360,7 @@ def calendar_keyboard():
 
 
 # =========================================================
-# EXTRACCIÓN
+# EXTRACCIÓN DE DATOS
 # =========================================================
 
 def extract(
@@ -731,6 +724,698 @@ def register_signal(text):
 
 
 # =========================================================
+# API-FOOTBALL
+# =========================================================
+
+def api_football_request(
+    endpoint,
+    params=None
+):
+
+    if not API_FOOTBALL_KEY:
+
+        print(
+            "❌ API_FOOTBALL_KEY no configurada"
+        )
+
+        return []
+
+    try:
+
+        response = requests.get(
+            f"{FOOTBALL_API_URL}/{endpoint}",
+            headers={
+                "x-apisports-key":
+                    API_FOOTBALL_KEY
+            },
+            params=params or {},
+            timeout=20
+        )
+
+        print(
+            "API-Football:",
+            endpoint,
+            params or {},
+            "HTTP",
+            response.status_code
+        )
+
+        data = response.json()
+
+        if data.get("errors"):
+
+            print(
+                "❌ Error API-Football:",
+                data["errors"]
+            )
+
+            return []
+
+        return data.get(
+            "response",
+            []
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ Error API-Football:",
+            e
+        )
+
+        return []
+
+
+def normalize_team_name(name):
+
+    if not name:
+        return ""
+
+    name = name.lower()
+
+    replacements = {
+        "fc ": "",
+        "fc": "",
+        " cf": "",
+        "cf ": "",
+        "afc ": "",
+        "sc ": "",
+        "cd ": "",
+        "ud ": "",
+        "club ": "",
+    }
+
+    for old, new in replacements.items():
+
+        name = name.replace(
+            old,
+            new
+        )
+
+    name = re.sub(
+        r"[^a-z0-9áéíóúüñ ]",
+        "",
+        name
+    )
+
+    name = re.sub(
+        r"\s+",
+        " ",
+        name
+    ).strip()
+
+    return name
+
+
+def split_match_name(match_text):
+
+    if not match_text:
+        return None, None
+
+    text = match_text.strip()
+
+    separators = [
+        r"\s+vs\.?\s+",
+        r"\s+v\.?\s+",
+        r"\s+-\s+",
+        r"\s+–\s+",
+        r"\s+—\s+",
+        r"\s+🆚\s+"
+    ]
+
+    for separator in separators:
+
+        parts = re.split(
+            separator,
+            text,
+            maxsplit=1,
+            flags=re.IGNORECASE
+        )
+
+        if len(parts) == 2:
+
+            return (
+                parts[0].strip(),
+                parts[1].strip()
+            )
+
+    return None, None
+
+
+def find_fixture_for_signal(signal):
+
+    match_text = signal.get(
+        "match",
+        ""
+    )
+
+    if not match_text:
+        print(
+            "⚠️ La señal no tiene partido."
+        )
+        return None
+
+    home_name, away_name = split_match_name(
+        match_text
+    )
+
+    if not home_name or not away_name:
+
+        print(
+            "⚠️ No pude separar los equipos:",
+            match_text
+        )
+
+        return None
+
+    home_name = normalize_team_name(
+        home_name
+    )
+
+    away_name = normalize_team_name(
+        away_name
+    )
+
+    api_date = signal.get(
+        "api_date"
+    )
+
+    if not api_date:
+        api_date = colombia_date()
+
+    print(
+        "🔎 Buscando fixture:",
+        home_name,
+        "vs",
+        away_name,
+        "fecha:",
+        api_date
+    )
+
+    fixtures = api_football_request(
+        "fixtures",
+        {
+            "date": api_date
+        }
+    )
+
+    print(
+        "Partidos encontrados:",
+        len(fixtures)
+    )
+
+    for fixture in fixtures:
+
+        teams = fixture.get(
+            "teams",
+            {}
+        )
+
+        home = teams.get(
+            "home",
+            {}
+        )
+
+        away = teams.get(
+            "away",
+            {}
+        )
+
+        home_api = normalize_team_name(
+            home.get(
+                "name",
+                ""
+            )
+        )
+
+        away_api = normalize_team_name(
+            away.get(
+                "name",
+                ""
+            )
+        )
+
+        if (
+            home_api == home_name
+            and
+            away_api == away_name
+        ):
+
+            fixture_id = fixture.get(
+                "fixture",
+                {}
+            ).get(
+                "id"
+            )
+
+            print(
+                "✅ Fixture encontrado:",
+                fixture_id
+            )
+
+            return fixture
+
+    print(
+        "⚠️ Fixture no encontrado:",
+        match_text
+    )
+
+    return None
+
+
+# =========================================================
+# ACTUALIZAR RESULTADOS
+# =========================================================
+
+def update_pending_results():
+
+    signals = load_signals()
+
+    pending = [
+
+        signal
+
+        for signal in signals
+
+        if signal.get(
+            "result",
+            "PENDIENTE"
+        ) == "PENDIENTE"
+
+    ]
+
+    if not pending:
+
+        print(
+            "ℹ️ No hay señales pendientes."
+        )
+
+        return
+
+    print(
+        "⏳ Señales pendientes:",
+        len(pending)
+    )
+
+    changed = False
+
+    for signal in pending:
+
+        try:
+
+            # -------------------------------------------------
+            # BUSCAR FIXTURE
+            # -------------------------------------------------
+
+            fixture_id = signal.get(
+                "fixture_id"
+            )
+
+            if not fixture_id:
+
+                fixture = find_fixture_for_signal(
+                    signal
+                )
+
+                if not fixture:
+
+                    continue
+
+                fixture_id = fixture.get(
+                    "fixture",
+                    {}
+                ).get(
+                    "id"
+                )
+
+                if not fixture_id:
+
+                    continue
+
+                signal["fixture_id"] = fixture_id
+
+                changed = True
+
+            # -------------------------------------------------
+            # CONSULTAR PARTIDO
+            # -------------------------------------------------
+
+            fixtures = api_football_request(
+                "fixtures",
+                {
+                    "id": fixture_id
+                }
+            )
+
+            if not fixtures:
+
+                continue
+
+            fixture = fixtures[0]
+
+            fixture_info = fixture.get(
+                "fixture",
+                {}
+            )
+
+            status = fixture_info.get(
+                "status",
+                {}
+            )
+
+            status_short = status.get(
+                "short"
+            )
+
+            elapsed = status.get(
+                "elapsed"
+            )
+
+            score = fixture.get(
+                "score",
+                {}
+            )
+
+            halftime = score.get(
+                "halftime",
+                {}
+            )
+
+            fulltime = score.get(
+                "fulltime",
+                {}
+            )
+
+            current_home = score.get(
+                "home"
+            )
+
+            current_away = score.get(
+                "away"
+            )
+
+            print(
+                f"⚽ #{fixture_id} | "
+                f"{current_home}-{current_away} | "
+                f"{status_short} | "
+                f"minuto {elapsed}"
+            )
+
+            # -------------------------------------------------
+            # GUARDAR MARCADOR EN VIVO
+            # -------------------------------------------------
+
+            signal["live_status"] = (
+                status_short
+            )
+
+            signal["live_minute"] = (
+                elapsed
+            )
+
+            signal["live_home_goals"] = (
+                current_home
+            )
+
+            signal["live_away_goals"] = (
+                current_away
+            )
+
+            if halftime:
+
+                signal["halftime_home"] = (
+                    halftime.get("home")
+                )
+
+                signal["halftime_away"] = (
+                    halftime.get("away")
+                )
+
+            changed = True
+
+            # -------------------------------------------------
+            # INFORMACIÓN EN VIVO
+            # -------------------------------------------------
+
+            live_statuses = [
+                "1H",
+                "HT",
+                "2H",
+                "ET",
+                "P",
+                "LIVE"
+            ]
+
+            if status_short in live_statuses:
+
+                print(
+                    "🟢 PARTIDO EN VIVO:",
+                    signal.get("match"),
+                    f"{current_home}-{current_away}"
+                )
+
+                continue
+
+            # -------------------------------------------------
+            # PARTIDO TERMINADO
+            # -------------------------------------------------
+
+            finished_statuses = [
+                "FT",
+                "AET",
+                "PEN"
+            ]
+
+            if status_short not in finished_statuses:
+
+                continue
+
+            # Preferir marcador fulltime
+            # cuando esté disponible.
+
+            final_home = (
+                fulltime.get("home")
+                if fulltime.get("home") is not None
+                else current_home
+            )
+
+            final_away = (
+                fulltime.get("away")
+                if fulltime.get("away") is not None
+                else current_away
+            )
+
+            strategy = signal.get(
+                "strategy",
+                ""
+            ).lower()
+
+            ht_home = halftime.get(
+                "home"
+            )
+
+            ht_away = halftime.get(
+                "away"
+            )
+
+            won = None
+
+            # -------------------------------------------------
+            # AMBOS MARCAN
+            # -------------------------------------------------
+
+            if (
+                "ambos marcan" in strategy
+                or "btts" in strategy
+            ):
+
+                if (
+                    final_home is not None
+                    and final_away is not None
+                ):
+
+                    won = (
+                        final_home >= 1
+                        and
+                        final_away >= 1
+                    )
+
+            # -------------------------------------------------
+            # OVER 2.5
+            # -------------------------------------------------
+
+            elif (
+                "más de 2.5" in strategy
+                or "over 2.5" in strategy
+            ):
+
+                if (
+                    final_home is not None
+                    and final_away is not None
+                ):
+
+                    won = (
+                        final_home +
+                        final_away
+                    ) >= 3
+
+            # -------------------------------------------------
+            # OVER 3.5
+            # -------------------------------------------------
+
+            elif (
+                "más de 3.5" in strategy
+                or "over 3.5" in strategy
+            ):
+
+                if (
+                    final_home is not None
+                    and final_away is not None
+                ):
+
+                    won = (
+                        final_home +
+                        final_away
+                    ) >= 4
+
+            # -------------------------------------------------
+            # EMPATE PRIMER TIEMPO
+            # -------------------------------------------------
+
+            elif (
+                "empate primer tiempo"
+                in strategy
+                or
+                "empate 1er tiempo"
+                in strategy
+            ):
+
+                if (
+                    ht_home is not None
+                    and ht_away is not None
+                ):
+
+                    won = (
+                        ht_home == ht_away
+                    )
+
+            # -------------------------------------------------
+            # VICTORIA LOCAL
+            # -------------------------------------------------
+
+            elif "victoria local" in strategy:
+
+                if (
+                    final_home is not None
+                    and final_away is not None
+                ):
+
+                    won = (
+                        final_home >
+                        final_away
+                    )
+
+            # -------------------------------------------------
+            # VICTORIA VISITANTE
+            # -------------------------------------------------
+
+            elif "victoria visitante" in strategy:
+
+                if (
+                    final_home is not None
+                    and final_away is not None
+                ):
+
+                    won = (
+                        final_away >
+                        final_home
+                    )
+
+            # -------------------------------------------------
+            # ESTRATEGIA DESCONOCIDA
+            # -------------------------------------------------
+
+            else:
+
+                print(
+                    "⚠️ Estrategia no reconocida:",
+                    signal.get("strategy")
+                )
+
+                continue
+
+            if won is None:
+
+                print(
+                    "⚠️ No se pudo determinar resultado:",
+                    signal.get("match")
+                )
+
+                continue
+
+            # -------------------------------------------------
+            # GUARDAR RESULTADO
+            # -------------------------------------------------
+
+            if won:
+
+                signal["result"] = "GANADA"
+
+            else:
+
+                signal["result"] = "PERDIDA"
+
+            signal["result_at"] = (
+                colombia_datetime()
+            )
+
+            signal["final_home_goals"] = (
+                final_home
+            )
+
+            signal["final_away_goals"] = (
+                final_away
+            )
+
+            changed = True
+
+            print(
+                "🏁 RESULTADO:",
+                signal["result"],
+                "|",
+                signal.get("match"),
+                "|",
+                f"{final_home}-{final_away}"
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ Error actualizando señal:",
+                signal.get("match"),
+                e
+            )
+
+    # ---------------------------------------------------------
+    # GUARDAR
+    # ---------------------------------------------------------
+
+    if changed:
+
+        if save_signals(signals):
+
+            print(
+                "💾 signals.json actualizado."
+            )
+
+        else:
+
+            print(
+                "❌ No se pudo guardar signals.json."
+            )
+
+
+# =========================================================
 # ESTADÍSTICAS
 # =========================================================
 
@@ -1033,6 +1718,22 @@ def pendientes():
 
         )
 
+        live_score = ""
+
+        if (
+            signal.get("live_home_goals")
+            is not None
+            and
+            signal.get("live_away_goals")
+            is not None
+        ):
+
+            live_score = (
+                f"\n⚽ En vivo: "
+                f"{signal.get('live_home_goals')}-"
+                f"{signal.get('live_away_goals')}"
+            )
+
         text += f"""
 
 🆔 #{signal.get('id')}
@@ -1044,6 +1745,7 @@ def pendientes():
 🎯 {signal.get('strategy')}
 
 💰 Cuota: {odds_text}
+{live_score}
 
 ━━━━━━━━━━━━━━━━━━━━
 """
@@ -1365,8 +2067,6 @@ def process_callback(callback):
         callback_id
     )
 
-    # PANEL
-
     if data == "inicio":
 
         edit_message(
@@ -1377,8 +2077,6 @@ def process_callback(callback):
         )
 
         return
-
-    # RENDIMIENTO
 
     if data == "rendimiento":
 
@@ -1391,8 +2089,6 @@ def process_callback(callback):
 
         return
 
-    # ESTRATEGIAS
-
     if data == "estrategias":
 
         edit_message(
@@ -1403,8 +2099,6 @@ def process_callback(callback):
         )
 
         return
-
-    # CALENDARIO
 
     if data == "calendario":
 
@@ -1462,8 +2156,6 @@ def process_callback(callback):
 
         return
 
-    # PENDIENTES
-
     if data == "pendientes":
 
         edit_message(
@@ -1474,8 +2166,6 @@ def process_callback(callback):
         )
 
         return
-
-    # GANANCIAS
 
     if data == "ganancias":
 
@@ -1488,8 +2178,6 @@ def process_callback(callback):
 
         return
 
-    # ESTADÍSTICAS
-
     if data == "estadisticas":
 
         edit_message(
@@ -1500,8 +2188,6 @@ def process_callback(callback):
         )
 
         return
-
-    # CONFIGURACIÓN
 
     if data == "configuracion":
 
@@ -1546,8 +2232,6 @@ def process_message(message):
 
     command = text.split()[0].lower()
 
-    # START
-
     if command == "/start":
 
         send_message(
@@ -1557,8 +2241,6 @@ def process_message(message):
         )
 
         return
-
-    # PANEL
 
     if command == "/panel":
 
@@ -1570,8 +2252,6 @@ def process_message(message):
 
         return
 
-    # ESTRATEGIAS
-
     if command == "/estrategias":
 
         send_message(
@@ -1582,8 +2262,6 @@ def process_message(message):
 
         return
 
-    # PENDIENTES
-
     if command == "/pendientes":
 
         send_message(
@@ -1593,8 +2271,6 @@ def process_message(message):
         )
 
         return
-
-    # CALENDARIO
 
     if command == "/calendario":
 
@@ -1607,8 +2283,6 @@ def process_message(message):
 
         return
 
-    # COMANDO DESCONOCIDO
-
     if text.startswith("/"):
 
         print(
@@ -1617,8 +2291,6 @@ def process_message(message):
         )
 
         return
-
-    # SEÑAL
 
     if not is_bet_alert(text):
 
@@ -1685,7 +2357,7 @@ comprobado automáticamente.
 
 
 # =========================================================
-# TELEGRAM
+# TELEGRAM GET UPDATES
 # =========================================================
 
 def get_updates(offset=None):
@@ -1752,7 +2424,7 @@ def main():
     )
 
     print(
-        "      PANEL + SEÑALES"
+        "      PANEL + RESULTADOS EN VIVO"
     )
 
     print(
@@ -1765,7 +2437,17 @@ def main():
     )
 
     # -----------------------------------------------------
-    # Telegram
+    # ACTUALIZAR RESULTADOS
+    # -----------------------------------------------------
+
+    print(
+        "⚽ ACTUALIZANDO RESULTADOS EN VIVO..."
+    )
+
+    update_pending_results()
+
+    # -----------------------------------------------------
+    # TELEGRAM
     # -----------------------------------------------------
 
     offset = load_offset()
@@ -1817,10 +2499,6 @@ def main():
                 "ERROR procesando update:",
                 e
             )
-
-        # IMPORTANTE
-        # Guardar offset después
-        # de procesar el update.
 
         if update_id is not None:
 
