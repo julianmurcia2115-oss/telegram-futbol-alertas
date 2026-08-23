@@ -7,53 +7,123 @@ from datetime import datetime, timedelta, timezone
 # CONFIGURACIÓN
 # ============================================================
 
-FOOTBALL_API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
+API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
-# Si tienes un CHAT_ID como Secret, lo utiliza.
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-BASE_URL = "https://api.football-data.org/v4"
+BASE_URL = "https://v3.football.api-sports.io"
 
-# Porcentaje mínimo para generar señal
 MIN_PROBABILITY = 70
-
-# Últimos partidos utilizados para el análisis
 LAST_MATCHES = 10
 
-# Tiempo máximo de espera ante HTTP 429
-MAX_WAIT_429 = 65
+# Apuesta fija
+STAKE = 5000
+
+# Máximo de partidos a analizar por ejecución
+MAX_PARTIDOS = 20
+
 
 # ============================================================
 # VALIDACIÓN
 # ============================================================
 
-if not FOOTBALL_API_KEY:
-    print("❌ FOOTBALL_DATA_API_KEY no está configurada.")
-    raise SystemExit(1)
-
-if not TELEGRAM_TOKEN:
-    print("❌ TELEGRAM_BOT_TOKEN no está configurada.")
-    raise SystemExit(1)
-
 print("====================================")
 print("⚽ FOOTBALL ALERTS")
 print("====================================")
-print("🔑 FootballData: CONFIGURADA")
+
+if not API_FOOTBALL_KEY:
+    print("❌ API_FOOTBALL_KEY NO CONFIGURADA")
+    raise SystemExit(1)
+
+print("🔑 API-Football: CONFIGURADA")
+
+if not TELEGRAM_TOKEN:
+    print("❌ TELEGRAM_BOT_TOKEN NO CONFIGURADO")
+    raise SystemExit(1)
+
 print("🤖 Telegram: CONFIGURADO")
+
+if CHAT_ID:
+    print("💬 Telegram Chat ID: CONFIGURADO")
+else:
+    print("⚠️ TELEGRAM_CHAT_ID NO CONFIGURADO")
+
 print("====================================")
 
 
 # ============================================================
-# SESIÓN HTTP
+# SESIÓN
 # ============================================================
 
 session = requests.Session()
 
 session.headers.update({
-    "X-Auth-Token": FOOTBALL_API_KEY,
-    "User-Agent": "FootballAlertsBot/1.0"
+    "x-apisports-key": API_FOOTBALL_KEY,
+    "Accept": "application/json",
+    "User-Agent": "FootballAlertsBot/2.0"
 })
+
+
+# ============================================================
+# API FOOTBALL
+# ============================================================
+
+def api_get(endpoint, params=None):
+
+    url = BASE_URL + endpoint
+
+    try:
+
+        response = session.get(
+            url,
+            params=params,
+            timeout=30
+        )
+
+        print(
+            f"API-Football: {endpoint} "
+            f"HTTP {response.status_code}"
+        )
+
+        if response.status_code == 200:
+
+            data = response.json()
+
+            errores = data.get("errors")
+
+            if errores:
+                print(
+                    f"⚠️ API-Football errors: "
+                    f"{errores}"
+                )
+
+            return data
+
+        if response.status_code == 429:
+
+            print(
+                "⚠️ Límite de API-Football alcanzado."
+            )
+
+            print(
+                response.text
+            )
+
+            return None
+
+        print(
+            f"❌ API-Football HTTP "
+            f"{response.status_code}: "
+            f"{response.text}"
+        )
+
+    except requests.exceptions.RequestException as e:
+
+        print(
+            f"❌ Error conexión API-Football: {e}"
+        )
+
+    return None
 
 
 # ============================================================
@@ -61,17 +131,21 @@ session.headers.update({
 # ============================================================
 
 def enviar_telegram(mensaje):
-    """
-    Envía un mensaje a Telegram.
-    """
 
     if not CHAT_ID:
-        print("⚠️ TELEGRAM_CHAT_ID no está configurado.")
-        print("📨 Mensaje que se enviaría:")
+
+        print(
+            "⚠️ TELEGRAM_CHAT_ID no configurado."
+        )
+
         print(mensaje)
+
         return False
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{TELEGRAM_TOKEN}/sendMessage"
+    )
 
     data = {
         "chat_id": CHAT_ID,
@@ -80,6 +154,7 @@ def enviar_telegram(mensaje):
     }
 
     try:
+
         response = requests.post(
             url,
             data=data,
@@ -87,213 +162,116 @@ def enviar_telegram(mensaje):
         )
 
         if response.status_code == 200:
-            print("📨 Telegram: mensaje enviado")
+
+            print(
+                "📨 Telegram: mensaje enviado"
+            )
+
             return True
 
         print(
-            f"❌ Telegram HTTP {response.status_code}: "
+            f"❌ Telegram HTTP "
+            f"{response.status_code}: "
             f"{response.text}"
         )
 
     except Exception as e:
-        print(f"❌ Error Telegram: {e}")
+
+        print(
+            f"❌ Error Telegram: {e}"
+        )
 
     return False
 
 
 # ============================================================
-# PETICIÓN A FOOTBALL-DATA
-# ============================================================
-
-def football_get(endpoint, params=None, retries=3):
-    """
-    Hace una petición a football-data.org.
-
-    Maneja automáticamente:
-    - 200
-    - 429
-    - errores de conexión
-    """
-
-    url = BASE_URL + endpoint
-
-    for intento in range(1, retries + 1):
-
-        try:
-
-            response = session.get(
-                url,
-                params=params,
-                timeout=30
-            )
-
-            print(
-                f"Football-data: "
-                f"{endpoint} HTTP {response.status_code}"
-            )
-
-            # ------------------------------------------------
-            # CORRECTO
-            # ------------------------------------------------
-
-            if response.status_code == 200:
-                return response.json()
-
-            # ------------------------------------------------
-            # LÍMITE DE PETICIONES
-            # ------------------------------------------------
-
-            if response.status_code == 429:
-
-                wait_time = 60
-
-                try:
-                    data = response.json()
-
-                    message = data.get("message", "")
-
-                    # Busca números dentro del mensaje
-                    import re
-
-                    numeros = re.findall(
-                        r"\d+",
-                        message
-                    )
-
-                    if numeros:
-                        wait_time = int(numeros[0]) + 2
-
-                except Exception:
-                    pass
-
-                wait_time = min(
-                    wait_time,
-                    MAX_WAIT_429
-                )
-
-                print(
-                    f"⏳ Límite API alcanzado. "
-                    f"Esperando {wait_time} segundos..."
-                )
-
-                time.sleep(wait_time)
-
-                continue
-
-            # ------------------------------------------------
-            # TOKEN INVÁLIDO
-            # ------------------------------------------------
-
-            if response.status_code == 400:
-
-                try:
-                    data = response.json()
-
-                    print(
-                        "❌ Football-data:",
-                        data
-                    )
-
-                except Exception:
-                    print(
-                        "❌ Football-data:",
-                        response.text
-                    )
-
-                return None
-
-            # ------------------------------------------------
-            # OTROS ERRORES
-            # ------------------------------------------------
-
-            print(
-                f"⚠️ Error API "
-                f"{response.status_code}: "
-                f"{response.text}"
-            )
-
-        except requests.exceptions.RequestException as e:
-
-            print(
-                f"⚠️ Error de conexión "
-                f"(intento {intento}/{retries}): {e}"
-            )
-
-            time.sleep(5)
-
-    return None
-
-
-# ============================================================
-# OBTENER PARTIDOS DEL DÍA
+# PARTIDOS DE HOY Y MAÑANA
 # ============================================================
 
 def obtener_partidos():
 
-    hoy = datetime.now(timezone.utc).date()
+    hoy = datetime.now(
+        timezone.utc
+    ).date()
 
     manana = hoy + timedelta(days=1)
 
+    print("")
     print(
-        f"📅 Descargando partidos "
+        f"📅 Buscando partidos "
         f"{hoy} y {manana}"
     )
 
     partidos = []
 
     # --------------------------------------------------------
-    # UNA SOLA PETICIÓN PARA HOY
+    # HOY
     # --------------------------------------------------------
 
-    data_hoy = football_get(
-        "/matches",
-        params={
-            "dateFrom": hoy.isoformat(),
-            "dateTo": hoy.isoformat()
+    data_hoy = api_get(
+        "/fixtures",
+        {
+            "date": hoy.isoformat(),
+            "timezone": "America/Bogota"
         }
     )
 
     if data_hoy:
+
         partidos.extend(
-            data_hoy.get("matches", [])
+            data_hoy.get(
+                "response",
+                []
+            )
         )
 
     # --------------------------------------------------------
-    # UNA SOLA PETICIÓN PARA MAÑANA
+    # MAÑANA
     # --------------------------------------------------------
 
-    data_manana = football_get(
-        "/matches",
-        params={
-            "dateFrom": manana.isoformat(),
-            "dateTo": manana.isoformat()
+    data_manana = api_get(
+        "/fixtures",
+        {
+            "date": manana.isoformat(),
+            "timezone": "America/Bogota"
         }
     )
 
     if data_manana:
+
         partidos.extend(
-            data_manana.get("matches", [])
+            data_manana.get(
+                "response",
+                []
+            )
         )
 
     # --------------------------------------------------------
     # ELIMINAR DUPLICADOS
     # --------------------------------------------------------
 
-    partidos_unicos = {}
+    unicos = {}
 
     for partido in partidos:
 
-        partido_id = partido.get("id")
+        fixture = partido.get(
+            "fixture",
+            {}
+        )
 
-        if partido_id:
-            partidos_unicos[partido_id] = partido
+        fixture_id = fixture.get(
+            "id"
+        )
+
+        if fixture_id:
+            unicos[fixture_id] = partido
 
     resultado = list(
-        partidos_unicos.values()
+        unicos.values()
     )
 
     print(
-        f"📊 Partidos disponibles: "
+        f"📊 Partidos encontrados: "
         f"{len(resultado)}"
     )
 
@@ -301,120 +279,21 @@ def obtener_partidos():
 
 
 # ============================================================
-# NORMALIZAR NOMBRES
+# ÚLTIMOS 10 PARTIDOS
 # ============================================================
 
-def normalizar_nombre(nombre):
-
-    if not nombre:
-        return ""
-
-    nombre = nombre.lower()
-
-    reemplazos = {
-        " fc": "",
-        " cf": "",
-        " sc": "",
-        " afc": "",
-        " united": "",
-        " utd": "",
-        " city": "",
-        " sporting": "",
-        " club": ""
-    }
-
-    for viejo, nuevo in reemplazos.items():
-        nombre = nombre.replace(
-            viejo,
-            nuevo
-        )
-
-    return (
-        nombre
-        .replace("-", " ")
-        .replace("_", " ")
-        .strip()
-    )
-
-
-# ============================================================
-# BUSCAR PARTIDO EN LA LISTA
-# ============================================================
-
-def buscar_partido(
-    partidos,
-    local,
-    visitante
-):
-
-    local_busqueda = normalizar_nombre(local)
-    visitante_busqueda = normalizar_nombre(visitante)
-
-    for partido in partidos:
-
-        home = partido.get(
-            "homeTeam",
-            {}
-        ).get(
-            "name",
-            ""
-        )
-
-        away = partido.get(
-            "awayTeam",
-            {}
-        ).get(
-            "name",
-            ""
-        )
-
-        home_normalizado = normalizar_nombre(
-            home
-        )
-
-        away_normalizado = normalizar_nombre(
-            away
-        )
-
-        if (
-            local_busqueda in home_normalizado
-            or home_normalizado in local_busqueda
-        ) and (
-            visitante_busqueda in away_normalizado
-            or away_normalizado in visitante_busqueda
-        ):
-
-            return partido
-
-    return None
-
-
-# ============================================================
-# ÚLTIMOS PARTIDOS DE UN EQUIPO
-# ============================================================
-
-def obtener_ultimos_partidos(team_id, limite=10):
+def obtener_ultimos_partidos(team_id):
 
     print(
-        f"📈 Buscando últimos "
-        f"{limite} partidos del equipo {team_id}"
+        f"📈 Últimos {LAST_MATCHES} "
+        f"partidos del equipo {team_id}"
     )
 
-    fecha_final = datetime.now(
-        timezone.utc
-    ).date()
-
-    fecha_inicio = (
-        fecha_final -
-        timedelta(days=180)
-    )
-
-    data = football_get(
-        f"/teams/{team_id}/matches",
-        params={
-            "dateFrom": fecha_inicio.isoformat(),
-            "dateTo": fecha_final.isoformat(),
-            "status": "FINISHED"
+    data = api_get(
+        "/fixtures",
+        {
+            "team": team_id,
+            "last": LAST_MATCHES
         }
     )
 
@@ -422,72 +301,108 @@ def obtener_ultimos_partidos(team_id, limite=10):
         return []
 
     partidos = data.get(
-        "matches",
+        "response",
         []
     )
 
-    partidos.sort(
-        key=lambda x: x.get(
-            "utcDate",
-            ""
-        ),
-        reverse=True
+    return partidos
+
+
+# ============================================================
+# EXTRAER GOLES
+# ============================================================
+
+def obtener_goles(partido):
+
+    goals = partido.get(
+        "goals",
+        {}
     )
 
-    return partidos[:limite]
+    home = goals.get(
+        "home"
+    )
+
+    away = goals.get(
+        "away"
+    )
+
+    if home is None or away is None:
+        return None, None
+
+    return home, away
 
 
 # ============================================================
-# ESTADÍSTICAS BTTS
+# BTTS
 # ============================================================
 
-def calcular_btts(partidos, team_id):
+def calcular_btts(partidos):
 
     if not partidos:
         return 0
 
-    total = 0
+    validos = 0
+    btts = 0
 
     for partido in partidos:
 
-        score = partido.get(
-            "score",
-            {}
+        home, away = obtener_goles(
+            partido
         )
 
-        fulltime = score.get(
-            "fullTime",
-            {}
-        )
-
-        home_goals = fulltime.get(
-            "home"
-        )
-
-        away_goals = fulltime.get(
-            "away"
-        )
-
-        if (
-            home_goals is None
-            or away_goals is None
-        ):
+        if home is None or away is None:
             continue
 
-        if (
-            home_goals > 0
-            and away_goals > 0
-        ):
-            total += 1
+        validos += 1
+
+        if home > 0 and away > 0:
+            btts += 1
+
+    if validos == 0:
+        return 0
 
     return (
-        total /
-        len(partidos)
+        btts / validos
     ) * 100
 
 
 # ============================================================
-# ESTADÍSTICAS OVER 2.5
+# OVER 1.5
+# ============================================================
+
+def calcular_over15(partidos):
+
+    if not partidos:
+        return 0
+
+    validos = 0
+    total = 0
+
+    for partido in partidos:
+
+        home, away = obtener_goles(
+            partido
+        )
+
+        if home is None or away is None:
+            continue
+
+        validos += 1
+
+        if home + away > 1:
+            total += 1
+
+    if validos == 0:
+        return 0
+
+    return (
+        total / validos
+    ) * 100
+
+
+# ============================================================
+# OVER 2.5
 # ============================================================
 
 def calcular_over25(partidos):
@@ -495,90 +410,191 @@ def calcular_over25(partidos):
     if not partidos:
         return 0
 
+    validos = 0
     total = 0
 
     for partido in partidos:
 
-        score = partido.get(
-            "score",
-            {}
+        home, away = obtener_goles(
+            partido
         )
 
-        fulltime = score.get(
-            "fullTime",
-            {}
-        )
-
-        home_goals = fulltime.get(
-            "home"
-        )
-
-        away_goals = fulltime.get(
-            "away"
-        )
-
-        if (
-            home_goals is None
-            or away_goals is None
-        ):
+        if home is None or away is None:
             continue
 
-        if (
-            home_goals +
-            away_goals
-        ) > 2:
+        validos += 1
 
+        if home + away > 2:
             total += 1
 
+    if validos == 0:
+        return 0
+
     return (
-        total /
-        len(partidos)
+        total / validos
     ) * 100
 
 
 # ============================================================
-# EMPATE AL DESCANSO
+# OVER 3.5
 # ============================================================
 
-def calcular_empate_descanso(partidos):
+def calcular_over35(partidos):
 
     if not partidos:
         return 0
 
+    validos = 0
     total = 0
 
     for partido in partidos:
 
-        score = partido.get(
-            "score",
-            {}
+        home, away = obtener_goles(
+            partido
         )
 
-        halftime = score.get(
-            "halfTime",
-            {}
-        )
-
-        home_goals = halftime.get(
-            "home"
-        )
-
-        away_goals = halftime.get(
-            "away"
-        )
-
-        if (
-            home_goals is None
-            or away_goals is None
-        ):
+        if home is None or away is None:
             continue
 
-        if home_goals == away_goals:
+        validos += 1
+
+        if home + away > 3:
             total += 1
 
+    if validos == 0:
+        return 0
+
     return (
-        total /
-        len(partidos)
+        total / validos
+    ) * 100
+
+
+# ============================================================
+# UNDER 3.5
+# ============================================================
+
+def calcular_under35(partidos):
+
+    if not partidos:
+        return 0
+
+    validos = 0
+    total = 0
+
+    for partido in partidos:
+
+        home, away = obtener_goles(
+            partido
+        )
+
+        if home is None or away is None:
+            continue
+
+        validos += 1
+
+        if home + away < 4:
+            total += 1
+
+    if validos == 0:
+        return 0
+
+    return (
+        total / validos
+    ) * 100
+
+
+# ============================================================
+# GANADOR LOCAL
+# ============================================================
+
+def calcular_local_gana(partidos, team_id):
+
+    if not partidos:
+        return 0
+
+    validos = 0
+    ganados = 0
+
+    for partido in partidos:
+
+        home, away = obtener_goles(
+            partido
+        )
+
+        if home is None or away is None:
+            continue
+
+        validos += 1
+
+        teams = partido.get(
+            "teams",
+            {}
+        )
+
+        home_team = teams.get(
+            "home",
+            {}
+        )
+
+        away_team = teams.get(
+            "away",
+            {}
+        )
+
+        local = (
+            home_team.get("id")
+            == team_id
+        )
+
+        if local:
+
+            if home > away:
+                ganados += 1
+
+        else:
+
+            if away > home:
+                ganados += 1
+
+    if validos == 0:
+        return 0
+
+    return (
+        ganados / validos
+    ) * 100
+
+
+# ============================================================
+# EMPATE
+# ============================================================
+
+def calcular_empate(partidos):
+
+    if not partidos:
+        return 0
+
+    validos = 0
+    empates = 0
+
+    for partido in partidos:
+
+        home, away = obtener_goles(
+            partido
+        )
+
+        if home is None or away is None:
+            continue
+
+        validos += 1
+
+        if home == away:
+            empates += 1
+
+    if validos == 0:
+        return 0
+
+    return (
+        empates / validos
     ) * 100
 
 
@@ -588,14 +604,28 @@ def calcular_empate_descanso(partidos):
 
 def analizar_partido(partido):
 
-    home_team = partido.get(
-        "homeTeam",
+    fixture = partido.get(
+        "fixture",
         {}
     )
 
-    away_team = partido.get(
-        "awayTeam",
+    teams = partido.get(
+        "teams",
         {}
+    )
+
+    home_team = teams.get(
+        "home",
+        {}
+    )
+
+    away_team = teams.get(
+        "away",
+        {}
+    )
+
+    fixture_id = fixture.get(
+        "id"
     )
 
     home_name = home_team.get(
@@ -617,14 +647,9 @@ def analizar_partido(partido):
     )
 
     if not home_id or not away_id:
-
-        print(
-            f"⚠️ Sin IDs: "
-            f"{home_name} - {away_name}"
-        )
-
         return None
 
+    print("")
     print(
         f"🔎 Analizando: "
         f"{home_name} vs {away_name}"
@@ -635,22 +660,18 @@ def analizar_partido(partido):
     # --------------------------------------------------------
 
     home_matches = obtener_ultimos_partidos(
-        home_id,
-        LAST_MATCHES
+        home_id
     )
 
-    time.sleep(1)
+    time.sleep(0.5)
 
     # --------------------------------------------------------
     # ÚLTIMOS 10 VISITANTE
     # --------------------------------------------------------
 
     away_matches = obtener_ultimos_partidos(
-        away_id,
-        LAST_MATCHES
+        away_id
     )
-
-    time.sleep(1)
 
     if (
         len(home_matches) < 5
@@ -658,71 +679,193 @@ def analizar_partido(partido):
     ):
 
         print(
-            "⚠️ No hay suficientes "
-            "partidos históricos."
+            "⚠️ Insuficientes datos."
         )
 
         return None
 
     # --------------------------------------------------------
-    # CÁLCULOS
+    # ESTADÍSTICAS
     # --------------------------------------------------------
 
-    home_btts = calcular_btts(
+    btts_home = calcular_btts(
+        home_matches
+    )
+
+    btts_away = calcular_btts(
+        away_matches
+    )
+
+    over15_home = calcular_over15(
+        home_matches
+    )
+
+    over15_away = calcular_over15(
+        away_matches
+    )
+
+    over25_home = calcular_over25(
+        home_matches
+    )
+
+    over25_away = calcular_over25(
+        away_matches
+    )
+
+    over35_home = calcular_over35(
+        home_matches
+    )
+
+    over35_away = calcular_over35(
+        away_matches
+    )
+
+    under35_home = calcular_under35(
+        home_matches
+    )
+
+    under35_away = calcular_under35(
+        away_matches
+    )
+
+    local_home = calcular_local_gana(
         home_matches,
         home_id
     )
 
-    away_btts = calcular_btts(
+    local_away = calcular_local_gana(
         away_matches,
         away_id
     )
 
-    home_over25 = calcular_over25(
+    empate_home = calcular_empate(
         home_matches
     )
 
-    away_over25 = calcular_over25(
+    empate_away = calcular_empate(
         away_matches
     )
 
-    home_ht_draw = calcular_empate_descanso(
-        home_matches
-    )
+    # --------------------------------------------------------
+    # PROMEDIOS
+    # --------------------------------------------------------
 
-    away_ht_draw = calcular_empate_descanso(
-        away_matches
-    )
-
-    # Promedios
     btts = (
-        home_btts +
-        away_btts
+        btts_home +
+        btts_away
+    ) / 2
+
+    over15 = (
+        over15_home +
+        over15_away
     ) / 2
 
     over25 = (
-        home_over25 +
-        away_over25
+        over25_home +
+        over25_away
     ) / 2
 
-    empate_ht = (
-        home_ht_draw +
-        away_ht_draw
+    over35 = (
+        over35_home +
+        over35_away
     ) / 2
 
-    resultado = {
+    under35 = (
+        under35_home +
+        under35_away
+    ) / 2
+
+    empate = (
+        empate_home +
+        empate_away
+    ) / 2
+
+    # --------------------------------------------------------
+    # PREDICCIÓN DE API-FOOTBALL
+    # --------------------------------------------------------
+
+    prediction = api_get(
+        "/predictions",
+        {
+            "fixture": fixture_id
+        }
+    )
+
+    pred_home = None
+    pred_draw = None
+    pred_away = None
+
+    if prediction:
+
+        response = prediction.get(
+            "response",
+            []
+        )
+
+        if response:
+
+            predictions = response[0].get(
+                "predictions",
+                {}
+            )
+
+            percent = predictions.get(
+                "percent",
+                {}
+            )
+
+            pred_home = convertir_porcentaje(
+                percent.get("home")
+            )
+
+            pred_draw = convertir_porcentaje(
+                percent.get("draw")
+            )
+
+            pred_away = convertir_porcentaje(
+                percent.get("away")
+            )
+
+    return {
+        "fixture_id": fixture_id,
         "home": home_name,
         "away": away_name,
         "btts": btts,
+        "over15": over15,
         "over25": over25,
-        "empate_ht": empate_ht
+        "over35": over35,
+        "under35": under35,
+        "empate": empate,
+        "pred_home": pred_home,
+        "pred_draw": pred_draw,
+        "pred_away": pred_away
     }
-
-    return resultado
 
 
 # ============================================================
-# CREAR ALERTA
+# CONVERTIR %
+# ============================================================
+
+def convertir_porcentaje(valor):
+
+    if valor is None:
+        return None
+
+    try:
+
+        return float(
+            str(valor)
+            .replace("%", "")
+            .strip()
+        )
+
+    except Exception:
+
+        return None
+
+
+# ============================================================
+# CREAR SEÑALES
 # ============================================================
 
 def crear_alerta(resultado):
@@ -733,48 +876,215 @@ def crear_alerta(resultado):
     home = resultado["home"]
     away = resultado["away"]
 
-    btts = resultado["btts"]
-    over25 = resultado["over25"]
-    empate_ht = resultado["empate_ht"]
-
     señales = []
 
-    if btts >= MIN_PROBABILITY:
+    # --------------------------------------------------------
+    # BTTS
+    # --------------------------------------------------------
+
+    if resultado["btts"] >= MIN_PROBABILITY:
 
         señales.append(
-            f"⚽ <b>BTTS: {btts:.1f}%</b>"
+            (
+                "⚽ BTTS",
+                resultado["btts"]
+            )
         )
 
-    if over25 >= MIN_PROBABILITY:
+    # --------------------------------------------------------
+    # OVER 1.5
+    # --------------------------------------------------------
+
+    if resultado["over15"] >= MIN_PROBABILITY:
 
         señales.append(
-            f"🔥 <b>OVER 2.5: {over25:.1f}%</b>"
+            (
+                "🔥 OVER 1.5",
+                resultado["over15"]
+            )
         )
 
-    if empate_ht >= MIN_PROBABILITY:
+    # --------------------------------------------------------
+    # OVER 2.5
+    # --------------------------------------------------------
+
+    if resultado["over25"] >= MIN_PROBABILITY:
 
         señales.append(
-            f"🤝 <b>EMPATE 1T: "
-            f"{empate_ht:.1f}%</b>"
+            (
+                "🔥 OVER 2.5",
+                resultado["over25"]
+            )
         )
+
+    # --------------------------------------------------------
+    # OVER 3.5
+    # --------------------------------------------------------
+
+    if resultado["over35"] >= MIN_PROBABILITY:
+
+        señales.append(
+            (
+                "🔥 OVER 3.5",
+                resultado["over35"]
+            )
+        )
+
+    # --------------------------------------------------------
+    # UNDER 3.5
+    # --------------------------------------------------------
+
+    if resultado["under35"] >= MIN_PROBABILITY:
+
+        señales.append(
+            (
+                "🧊 UNDER 3.5",
+                resultado["under35"]
+            )
+        )
+
+    # --------------------------------------------------------
+    # EMPATE
+    # --------------------------------------------------------
+
+    if resultado["empate"] >= MIN_PROBABILITY:
+
+        señales.append(
+            (
+                "🤝 EMPATE",
+                resultado["empate"]
+            )
+        )
+
+    # --------------------------------------------------------
+    # PREDICCIÓN LOCAL
+    # --------------------------------------------------------
+
+    if (
+        resultado["pred_home"] is not None
+        and resultado["pred_home"] >= MIN_PROBABILITY
+    ):
+
+        señales.append(
+            (
+                f"🏠 GANA {home}",
+                resultado["pred_home"]
+            )
+        )
+
+    # --------------------------------------------------------
+    # PREDICCIÓN EMPATE
+    # --------------------------------------------------------
+
+    if (
+        resultado["pred_draw"] is not None
+        and resultado["pred_draw"] >= MIN_PROBABILITY
+    ):
+
+        señales.append(
+            (
+                "🤝 EMPATE",
+                resultado["pred_draw"]
+            )
+        )
+
+    # --------------------------------------------------------
+    # PREDICCIÓN VISITANTE
+    # --------------------------------------------------------
+
+    if (
+        resultado["pred_away"] is not None
+        and resultado["pred_away"] >= MIN_PROBABILITY
+    ):
+
+        señales.append(
+            (
+                f"✈️ GANA {away}",
+                resultado["pred_away"]
+            )
+        )
+
+    # --------------------------------------------------------
+    # NO HAY SEÑAL
+    # --------------------------------------------------------
 
     if not señales:
         return None
 
-    mensaje = (
-        "🚨 <b>SEÑAL FOOTBALL ALERTS</b>\n\n"
-        f"⚽ <b>{home}</b> vs "
-        f"<b>{away}</b>\n\n"
-        + "\n".join(señales)
-        + "\n\n"
-        "📊 Basado en últimos 10 partidos."
+    # --------------------------------------------------------
+    # CREAR TEXTO
+    # --------------------------------------------------------
+
+    ahora = datetime.now(
+        timezone.utc
     )
 
-    return mensaje
+    fecha = ahora.strftime(
+        "%d/%m/%Y %H:%M"
+    )
+
+    texto = []
+
+    texto.append(
+        "🚨 <b>SEÑAL FOOTBALL ALERTS</b>"
+    )
+
+    texto.append("")
+
+    texto.append(
+        f"⚽ <b>{home}</b> vs "
+        f"<b>{away}</b>"
+    )
+
+    texto.append("")
+
+    texto.append(
+        f"💰 Apuesta: <b>${STAKE:,} COP</b>"
+        .replace(",", ".")
+    )
+
+    texto.append("")
+
+    texto.append(
+        "📊 <b>MERCADOS DETECTADOS</b>"
+    )
+
+    for nombre, probabilidad in señales:
+
+        texto.append(
+            f"{nombre}: "
+            f"<b>{probabilidad:.1f}%</b>"
+        )
+
+    texto.append("")
+
+    texto.append(
+        "📌 Basado en últimos 10 partidos"
+    )
+
+    texto.append(
+        f"🕐 {fecha} UTC"
+    )
+
+    texto.append("")
+
+    texto.append(
+        "⏳ Resultado: "
+        "<b>PENDIENTE</b>"
+    )
+
+    texto.append("")
+
+    texto.append(
+        "⚠️ Señal estadística. "
+        "No garantiza resultado."
+    )
+
+    return "\n".join(texto)
 
 
 # ============================================================
-# EJECUCIÓN PRINCIPAL
+# MAIN
 # ============================================================
 
 def main():
@@ -785,10 +1095,6 @@ def main():
     print("====================================")
     print("🚀 INICIANDO ANÁLISIS")
     print("====================================")
-
-    # --------------------------------------------------------
-    # OBTENER PARTIDOS
-    # --------------------------------------------------------
 
     partidos = obtener_partidos()
 
@@ -801,26 +1107,21 @@ def main():
         return
 
     # --------------------------------------------------------
-    # LÍMITE DE PARTIDOS
-    #
-    # IMPORTANTE:
-    # No analizamos cientos de partidos.
+    # FILTRAR PARTIDOS
     # --------------------------------------------------------
 
-    MAX_PARTIDOS_ANALIZAR = 15
-
     partidos = partidos[
-        :MAX_PARTIDOS_ANALIZAR
+        :MAX_PARTIDOS
     ]
 
     print(
-        f"🎯 Analizando máximo "
+        f"🎯 Analizando "
         f"{len(partidos)} partidos."
     )
 
     actualizaciones = 0
 
-    partidos_procesados = set()
+    procesados = set()
 
     # --------------------------------------------------------
     # ANALIZAR
@@ -828,36 +1129,18 @@ def main():
 
     for partido in partidos:
 
-        partido_id = partido.get(
+        fixture_id = partido.get(
+            "fixture",
+            {}
+        ).get(
             "id"
         )
 
-        if partido_id in partidos_procesados:
+        if fixture_id in procesados:
             continue
 
-        partidos_procesados.add(
-            partido_id
-        )
-
-        home = partido.get(
-            "homeTeam",
-            {}
-        ).get(
-            "name",
-            ""
-        )
-
-        away = partido.get(
-            "awayTeam",
-            {}
-        ).get(
-            "name",
-            ""
-        )
-
-        print("")
-        print(
-            f"🔎 {home} vs {away}"
+        procesados.add(
+            fixture_id
         )
 
         resultado = analizar_partido(
@@ -885,22 +1168,25 @@ def main():
             else:
 
                 print(
-                    "ℹ️ Sin señal >70%"
+                    "ℹ️ Sin señal >= 70%"
                 )
 
-        # Pequeña pausa entre partidos
-        time.sleep(2)
+        # Pequeña pausa
+        time.sleep(1)
 
     # --------------------------------------------------------
     # FINAL
     # --------------------------------------------------------
 
-    tiempo = time.time() - inicio
+    tiempo = (
+        time.time() -
+        inicio
+    )
 
     print("")
     print("====================================")
     print(
-        f"📨 Actualizaciones: "
+        f"📨 Señales enviadas: "
         f"{actualizaciones}"
     )
     print(
@@ -908,7 +1194,9 @@ def main():
         f"{tiempo:.1f} segundos"
     )
     print("====================================")
-    print("✅ Ejecución terminada.")
+    print(
+        "✅ Ejecución terminada."
+    )
     print("====================================")
 
 
