@@ -22,7 +22,6 @@ COLOMBIA_TZ = timezone(timedelta(hours=-5))
 
 API_URL = "https://v3.football.api-sports.io"
 
-# Cuánto tiempo escucha Telegram en cada ejecución de GitHub
 POLL_SECONDS = 20
 
 
@@ -598,6 +597,9 @@ def crear_apuesta(texto):
         "resultado":
             "pendiente",
 
+        "resultado_manual":
+            False,
+
         "ganancia":
             0,
 
@@ -696,6 +698,91 @@ def apuesta_duplicada(
 
 
 # ============================================================
+# BOTONES DE RESULTADO
+# ============================================================
+
+def enviar_apuesta_con_botones(
+    apuesta,
+    chat_id=None
+):
+
+    if chat_id is None:
+        chat_id = CHAT_ID
+
+    mensaje = (
+        "📩 <b>NUEVA APUESTA</b>\n\n"
+
+        f"⚽ {apuesta['home']} - "
+        f"{apuesta['away']}\n\n"
+
+        f"🏆 {apuesta['liga']}\n"
+
+        f"🎯 {apuesta['estrategia']}\n"
+
+        + (
+            f"💵 Cuota: "
+            f"{apuesta['cuota']}\n"
+            if apuesta.get("cuota")
+            else ""
+        )
+
+        + f"💰 Apuesta: "
+        f"${STAKE:,.0f} COP\n"
+
+        f"📌 Estado: 🟡 PENDIENTE"
+    )
+
+    keyboard = {
+
+        "inline_keyboard": [
+
+            [
+
+                {
+                    "text":
+                        "✅ GANADA",
+
+                    "callback_data":
+                        f"resultado_ganada:"
+                        f"{apuesta['id']}"
+                },
+
+                {
+                    "text":
+                        "❌ PERDIDA",
+
+                    "callback_data":
+                        f"resultado_perdida:"
+                        f"{apuesta['id']}"
+                }
+
+            ]
+        ]
+    }
+
+    return telegram_api(
+        "sendMessage",
+        {
+
+            "chat_id":
+                chat_id,
+
+            "text":
+                mensaje,
+
+            "parse_mode":
+                "HTML",
+
+            "reply_markup":
+                json.dumps(
+                    keyboard,
+                    ensure_ascii=False
+                )
+        }
+    )
+
+
+# ============================================================
 # REGISTRAR APUESTA
 # ============================================================
 
@@ -737,24 +824,8 @@ def registrar_apuesta(
         f"vs {nueva['away']}"
     )
 
-    mensaje = (
-        "✅ <b>APUESTA REGISTRADA</b>\n\n"
-
-        f"⚽ {nueva['home']} - "
-        f"{nueva['away']}\n\n"
-
-        f"🏆 {nueva['liga']}\n"
-
-        f"🎯 {nueva['estrategia']}\n"
-
-        f"💰 Apuesta: "
-        f"$5.000 COP\n"
-
-        f"📌 Estado: 🟡 PENDIENTE"
-    )
-
-    enviar(
-        mensaje
+    enviar_apuesta_con_botones(
+        nueva
     )
 
     return True
@@ -1136,8 +1207,6 @@ def determinar_resultado(
                 else "perdida"
             )
 
-        # No marcar automáticamente
-        # si no sabemos qué selección fue.
         return None
 
     return None
@@ -1185,7 +1254,234 @@ def calcular_ganancia(
 
 
 # ============================================================
-# ACTUALIZAR RESULTADOS
+# CERRAR APUESTA
+# ============================================================
+
+def cerrar_apuesta_manual(
+    apuesta,
+    resultado
+):
+
+    apuesta["resultado"] = resultado
+
+    apuesta["resultado_manual"] = True
+
+    apuesta["ganancia"] = (
+        calcular_ganancia(
+            apuesta,
+            resultado
+        )
+    )
+
+    apuesta["fecha_resultado"] = (
+        ahora_colombia()
+    )
+
+    return apuesta
+
+
+# ============================================================
+# PROCESAR RESULTADO MANUAL
+# ============================================================
+
+def procesar_resultado_manual(
+    callback,
+    resultado
+):
+
+    data = callback.get(
+        "data",
+        ""
+    )
+
+    try:
+
+        apuesta_id = int(
+            data.split(":")[1]
+        )
+
+    except Exception:
+
+        print(
+            "❌ ID de apuesta inválido"
+        )
+
+        return
+
+    apuestas = cargar_apuestas()
+
+    encontrada = None
+
+    for apuesta in apuestas:
+
+        try:
+
+            if int(
+                apuesta.get("id")
+            ) == apuesta_id:
+
+                encontrada = apuesta
+                break
+
+        except Exception:
+            continue
+
+    if encontrada is None:
+
+        print(
+            f"❌ Apuesta {apuesta_id} "
+            f"no encontrada"
+        )
+
+        telegram_api(
+            "answerCallbackQuery",
+            {
+                "callback_query_id":
+                    callback.get("id"),
+                "text":
+                    "❌ Apuesta no encontrada",
+                "show_alert":
+                    True
+            }
+        )
+
+        return
+
+    if encontrada.get(
+        "resultado",
+        "pendiente"
+    ) != "pendiente":
+
+        telegram_api(
+            "answerCallbackQuery",
+            {
+                "callback_query_id":
+                    callback.get("id"),
+                "text":
+                    "⚠️ Esta apuesta ya está cerrada",
+                "show_alert":
+                    True
+            }
+        )
+
+        return
+
+    cerrar_apuesta_manual(
+        encontrada,
+        resultado
+    )
+
+    guardar_apuestas(
+        apuestas
+    )
+
+    if resultado == "ganada":
+
+        icono = "🟢"
+        texto_resultado = "GANADA"
+
+    else:
+
+        icono = "🔴"
+        texto_resultado = "PERDIDA"
+
+    cuota = encontrada.get(
+        "cuota"
+    )
+
+    cuota_texto = ""
+
+    if cuota:
+
+        cuota_texto = (
+            f"💵 Cuota: {cuota}\n"
+        )
+
+    mensaje = (
+
+        f"{icono} "
+        f"<b>APUESTA CERRADA</b>\n\n"
+
+        f"⚽ {encontrada['home']} - "
+        f"{encontrada['away']}\n\n"
+
+        f"🏆 {encontrada['liga']}\n"
+
+        f"🎯 {encontrada['estrategia']}\n"
+
+        f"{cuota_texto}"
+
+        f"💰 Apuesta: "
+        f"${STAKE:,.0f} COP\n"
+
+        f"📌 Resultado: "
+        f"<b>{texto_resultado}</b>\n"
+
+        f"💵 Resultado económico: "
+        f"${encontrada['ganancia']:,.0f} COP\n\n"
+
+        f"🕐 {encontrada['fecha_resultado']}"
+    )
+
+    message = callback.get(
+        "message",
+        {}
+    )
+
+    chat = message.get(
+        "chat",
+        {}
+    )
+
+    chat_id = chat.get(
+        "id"
+    )
+
+    message_id = message.get(
+        "message_id"
+    )
+
+    if chat_id and message_id:
+
+        telegram_api(
+            "editMessageText",
+            {
+                "chat_id":
+                    chat_id,
+
+                "message_id":
+                    message_id,
+
+                "text":
+                    mensaje,
+
+                "parse_mode":
+                    "HTML"
+            }
+        )
+
+    telegram_api(
+        "answerCallbackQuery",
+        {
+            "callback_query_id":
+                callback.get("id"),
+
+            "text":
+                f"Resultado registrado: "
+                f"{texto_resultado}"
+        }
+    )
+
+    print(
+        f"✅ Resultado manual: "
+        f"{encontrada['home']} vs "
+        f"{encontrada['away']} = "
+        f"{resultado}"
+    )
+
+
+# ============================================================
+# ACTUALIZAR RESULTADOS AUTOMÁTICOS
 # ============================================================
 
 def actualizar_resultados():
@@ -1202,6 +1498,11 @@ def actualizar_resultados():
             "resultado",
             "pendiente"
         ) == "pendiente"
+
+        and not a.get(
+            "resultado_manual",
+            False
+        )
     ]
 
     print(
@@ -1293,6 +1594,8 @@ def actualizar_resultados():
             resultado
         )
 
+        apuesta["resultado_manual"] = False
+
         apuesta["ganancia"] = (
             calcular_ganancia(
                 apuesta,
@@ -1340,6 +1643,7 @@ def actualizar_resultados():
             icono = "🔴"
 
         mensaje = (
+
             f"{icono} "
             f"<b>APUESTA CERRADA</b>\n\n"
 
@@ -1422,7 +1726,12 @@ def calcular_estadisticas(
 
             perdidas += 1
 
-            ganancia -= STAKE
+            ganancia += float(
+                apuesta.get(
+                    "ganancia",
+                    -STAKE
+                )
+            )
 
         else:
 
@@ -1593,8 +1902,13 @@ def estrategias(
 
             datos[nombre]["perdidas"] += 1
 
-            datos[nombre]["ganancia"] -= (
-                STAKE
+            datos[nombre]["ganancia"] += (
+                float(
+                    apuesta.get(
+                        "ganancia",
+                        -STAKE
+                    )
+                )
             )
 
         else:
@@ -1832,7 +2146,7 @@ def crear_pendientes():
 
 
 # ============================================================
-# BOTONES
+# BOTONES DEL PANEL
 # ============================================================
 
 def enviar_panel(
@@ -1909,13 +2223,43 @@ def responder_callback(
     callback
 ):
 
+    data = callback.get(
+        "data"
+    )
+
     callback_id = callback.get(
         "id"
     )
 
-    data = callback.get(
-        "data"
-    )
+    # --------------------------------------------------------
+    # RESULTADO MANUAL
+    # --------------------------------------------------------
+
+    if data.startswith(
+        "resultado_ganada:"
+    ):
+
+        procesar_resultado_manual(
+            callback,
+            "ganada"
+        )
+
+        return
+
+    if data.startswith(
+        "resultado_perdida:"
+    ):
+
+        procesar_resultado_manual(
+            callback,
+            "perdida"
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # RESPUESTA GENERAL
+    # --------------------------------------------------------
 
     telegram_api(
         "answerCallbackQuery",
@@ -2174,7 +2518,7 @@ def main():
     # 1. Recibir nuevas alertas
     recibir_telegram()
 
-    # 2. Buscar resultados
+    # 2. Buscar resultados automáticos
     print(
         "⚽ ACTUALIZANDO RESULTADOS..."
     )
