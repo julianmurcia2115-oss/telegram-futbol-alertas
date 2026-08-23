@@ -957,5 +957,50 @@
     "result_at": null,
     "fixture_id": null,
     "raw_message": "💎  mas de 3,5 goles \n\n🏆Spain La Liga\n🆚  Elche - FC Barcelona\n🗓 dom, 23 ago 2026 19:30\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 28 \n\n📈 Posición en el ranking: 9 - 15\n\n🎯 Resultado deseado: Más de 3.5 goles\n\n🟢 bet365: 2.1\n\nCuotas:🎯 1X2\n1 7.50  X 5.50  2 1.36\n\n🎯 Número de goles\n+2.5 1.44  -2.5 2.75\n\n🎯 Ambos equipos marcan\nSI 1.75  NO 2.00"
+  },
+  {
+    "id": 74,
+    "registered_at": "2026-08-23 03:57:54",
+    "timezone": "America/Bogota",
+    "league": "USA MLS Next Pro",
+    "match": "Chicago Fire II - Inter Miami II",
+    "date": "dom, 23 ago 2026 20:00",
+    "api_date": null,
+    "strategy": "Local Más de 2.5 goles",
+    "odds": null,
+    "result": "PENDIENTE",
+    "result_at": null,
+    "fixture_id": null,
+    "raw_message": "💎  mas 2,5 equipo casa riesgo medio \n\n🏆USA MLS Next Pro\n🆚  Chicago Fire II - Inter Miami II\n🗓 dom, 23 ago 2026 20:00\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 1 \n\n📈 Posición en el ranking: 9 - 16\n\n🎯 Resultado deseado: Local Más de 2.5 goles\n\nCuotas:🎯 1X2\n1 1.33  X 5.00  2 5.75\n\n🎯 Número de goles\n+2.5 1.28  -2.5 3.50\n\n🎯 Ambos equipos marcan\nSI 1.40  NO 2.62"
+  },
+  {
+    "id": 75,
+    "registered_at": "2026-08-23 03:57:54",
+    "timezone": "America/Bogota",
+    "league": "USA MLS Next Pro",
+    "match": "Chicago Fire II - Inter Miami II",
+    "date": "dom, 23 ago 2026 20:00",
+    "api_date": null,
+    "strategy": "Más de 3.5 goles",
+    "odds": null,
+    "result": "PENDIENTE",
+    "result_at": null,
+    "fixture_id": null,
+    "raw_message": "💎  mas de 3,5 goles \n\n🏆USA MLS Next Pro\n🆚  Chicago Fire II - Inter Miami II\n🗓 dom, 23 ago 2026 20:00\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 29 \n\n📈 Posición en el ranking: 9 - 16\n\n🎯 Resultado deseado: Más de 3.5 goles\n\n🟢 pinnacle: 1.7\n\nCuotas:🎯 1X2\n1 1.33  X 5.00  2 5.75\n\n🎯 Número de goles\n+2.5 1.28  -2.5 3.50\n\n🎯 Ambos equipos marcan\nSI 1.40  NO 2.62"
+  },
+  {
+    "id": 76,
+    "registered_at": "2026-08-23 03:57:55",
+    "timezone": "America/Bogota",
+    "league": "Venezuela Segunda Division",
+    "match": "Dinamo Puerto La Cruz - Deportivo Miranda FC",
+    "date": "dom, 23 ago 2026 20:00",
+    "api_date": null,
+    "strategy": "Más de 2.5 goles",
+    "odds": null,
+    "result": "PENDIENTE",
+    "result_at": null,
+    "fixture_id": null,
+    "raw_message": "💎  mas de 2,5 goles riesgo medio \n\n🏆Venezuela Segunda Division\n🆚  Dinamo Puerto La Cruz - Deportivo Miranda FC\n🗓 dom, 23 ago 2026 20:00\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 2 \n\n📈 Posición en el ranking: 5 - 2\n\n🎯 Resultado deseado: Más de 2.5 goles\n\n🟢 1xbet: 2.59\n\nCuotas:🎯 1X2\n1 2.29  X 2.90  2 3.12\n\n🎯 Número de goles\n+2.5 2.59  -2.5 1.39\n\n🎯 Ambos equipos marcan\nSI 2.16  NO 1.59"
   }
 ]
