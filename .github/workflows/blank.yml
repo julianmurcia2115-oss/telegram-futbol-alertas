@@ -1,15 +1,17 @@
-name: ApuestasMurcia Bot
+name: Football Alerts
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 */2 * * *"
 
 jobs:
-  run-bot:
+  football-alerts:
+
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Descargar código
         uses: actions/checkout@v4
 
@@ -23,9 +25,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Ejecutar bot
+      - name: Ejecutar Football Alerts
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python football_alerts.py
