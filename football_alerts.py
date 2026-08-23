@@ -194,26 +194,18 @@ def telegram_api(method, data=None):
     return None
 
 
-def enviar(mensaje, chat_id=None, botones=None):
+def enviar(mensaje, chat_id=None):
 
     if chat_id is None:
         chat_id = CHAT_ID
 
-    data = {
-        "chat_id": chat_id,
-        "text": mensaje,
-        "parse_mode": "HTML"
-    }
-
-    if botones:
-        data["reply_markup"] = json.dumps(
-            botones,
-            ensure_ascii=False
-        )
-
     return telegram_api(
         "sendMessage",
-        data
+        {
+            "chat_id": chat_id,
+            "text": mensaje,
+            "parse_mode": "HTML"
+        }
     )
 
 
@@ -254,7 +246,7 @@ def normalizar(texto):
         )
 
     texto = re.sub(
-        r"[^a-z0-9\s+.\-]",
+        r"[^a-z0-9\s.+-]",
         " ",
         texto
     )
@@ -282,10 +274,10 @@ def nombres_equivalentes(nombre1, nombre2):
     palabras_a = set(a.split())
     palabras_b = set(b.split())
 
-    interseccion = (
-        palabras_a &
-        palabras_b
-    )
+    if not palabras_a or not palabras_b:
+        return False
+
+    interseccion = palabras_a & palabras_b
 
     minimo = min(
         len(palabras_a),
@@ -309,202 +301,143 @@ def nombres_equivalentes(nombre1, nombre2):
 
 
 # ============================================================
-# ESTRATEGIA / MERCADO
+# MERCADO REAL DE BETMINES
 # ============================================================
 
-def identificar_estrategia(texto):
+def extraer_resultado_deseado(texto):
 
-    t = normalizar(texto)
+    patrones = [
+
+        r"🎯\s*Resultado deseado\s*:\s*(.+)",
+
+        r"Resultado deseado\s*:\s*(.+)",
+
+        r"🎯\s*Pick\s*:\s*(.+)",
+
+        r"🎯\s*Mercado\s*:\s*(.+)",
+
+        r"Mercado\s*:\s*(.+)"
+
+    ]
+
+    for patron in patrones:
+
+        resultado = re.search(
+            patron,
+            texto,
+            re.IGNORECASE
+        )
+
+        if resultado:
+
+            valor = resultado.group(1).strip()
+
+            valor = valor.split("\n")[0].strip()
+
+            if valor:
+                return valor
+
+    return None
+
+
+def identificar_mercado(texto):
 
     # --------------------------------------------------------
-    # PRIMERO: RESULTADO DESEADO
+    # PRIMERO: tomar literalmente el mercado de BetMines
     # --------------------------------------------------------
 
-    resultado = re.search(
-        r"resultado deseado\s*:\s*(.+)",
-        t,
-        re.IGNORECASE
+    mercado = extraer_resultado_deseado(
+        texto
     )
 
-    if resultado:
+    if mercado:
 
-        deseado = resultado.group(1).strip()
+        mercado_normalizado = normalizar(
+            mercado
+        )
 
-        # BTTS
         if (
-            "ambos equipos anotan si" in deseado
-            or
-            "ambos equipos marcan si" in deseado
-            or
-            "ambos marcan si" in deseado
+            "ambos equipos marcan no"
+            in mercado_normalizado
         ):
+
+            return "BTTS NO"
+
+        if (
+            "ambos equipos marcan si"
+            in mercado_normalizado
+        ):
+
             return "BTTS SI"
 
         if (
-            "ambos equipos anotan no" in deseado
-            or
-            "ambos equipos marcan no" in deseado
-            or
-            "ambos marcan no" in deseado
+            "both teams to score no"
+            in mercado_normalizado
         ):
+
             return "BTTS NO"
 
-        # Goles
-        if "mas de 0.5" in deseado:
-            return "Más de 0.5 goles"
-
-        if "mas de 1.5" in deseado:
-            return "Más de 1.5 goles"
-
-        if "mas de 2.5" in deseado:
-            return "Más de 2.5 goles"
-
-        if "mas de 3.5" in deseado:
-            return "Más de 3.5 goles"
-
-        if "mas de 4.5" in deseado:
-            return "Más de 4.5 goles"
-
-        if "menos de 0.5" in deseado:
-            return "Menos de 0.5 goles"
-
-        if "menos de 1.5" in deseado:
-            return "Menos de 1.5 goles"
-
-        if "menos de 2.5" in deseado:
-            return "Menos de 2.5 goles"
-
-        if "menos de 3.5" in deseado:
-            return "Menos de 3.5 goles"
-
-        if "menos de 4.5" in deseado:
-            return "Menos de 4.5 goles"
-
-        # Empate al descanso
         if (
-            "empate 1t" in deseado
-            or
-            "empate al descanso" in deseado
-            or
-            "empate descanso" in deseado
+            "both teams to score yes"
+            in mercado_normalizado
         ):
-            return "Empate 1T"
 
-        # Si existe un resultado deseado
-        # que no reconocemos, conservarlo.
-        return resultado.group(1).strip()
+            return "BTTS SI"
+
+        return mercado
 
     # --------------------------------------------------------
-    # BTTS
+    # FALLBACK
     # --------------------------------------------------------
 
-    if (
-        "ambos equipos marcan no" in t
-        or
-        "ambos equipos anotan no" in t
-        or
-        "ambos marcan no" in t
-    ):
+    t = normalizar(texto)
+
+    if "btts no" in t:
         return "BTTS NO"
 
-    if (
-        "ambos equipos marcan si" in t
-        or
-        "ambos equipos anotan si" in t
-        or
-        "ambos marcan si" in t
-    ):
+    if "btts si" in t:
         return "BTTS SI"
 
-    # --------------------------------------------------------
-    # BTTS GENÉRICO
-    # --------------------------------------------------------
+    if "btts" in t:
+        return "BTTS"
 
-    if (
-        "btts no" in t
-        or
-        "btts - no" in t
-    ):
-        return "BTTS NO"
+    if "mas de 0.5" in t:
+        return "Más de 0.5"
 
-    if (
-        "btts si" in t
-        or
-        "btts - si" in t
-    ):
-        return "BTTS SI"
+    if "mas de 1.5" in t:
+        return "Más de 1.5"
 
-    # --------------------------------------------------------
-    # GOLES
-    # --------------------------------------------------------
+    if "mas de 2.5" in t:
+        return "Más de 2.5"
 
-    patrones_goles = [
+    if "mas de 3.5" in t:
+        return "Más de 3.5"
 
-        ("Más de 0.5 goles",
-         ["mas de 0.5", "over 0.5", "+0.5"]),
+    if "mas de 4.5" in t:
+        return "Más de 4.5"
 
-        ("Más de 1.5 goles",
-         ["mas de 1.5", "over 1.5", "+1.5"]),
+    if "menos de 2.5" in t:
+        return "Menos de 2.5"
 
-        ("Más de 2.5 goles",
-         ["mas de 2.5", "over 2.5", "+2.5"]),
+    if "menos de 3.5" in t:
+        return "Menos de 3.5"
 
-        ("Más de 3.5 goles",
-         ["mas de 3.5", "over 3.5", "+3.5"]),
-
-        ("Más de 4.5 goles",
-         ["mas de 4.5", "over 4.5", "+4.5"]),
-
-        ("Menos de 0.5 goles",
-         ["menos de 0.5", "under 0.5", "-0.5"]),
-
-        ("Menos de 1.5 goles",
-         ["menos de 1.5", "under 1.5", "-1.5"]),
-
-        ("Menos de 2.5 goles",
-         ["menos de 2.5", "under 2.5", "-2.5"]),
-
-        ("Menos de 3.5 goles",
-         ["menos de 3.5", "under 3.5", "-3.5"]),
-
-        ("Menos de 4.5 goles",
-         ["menos de 4.5", "under 4.5", "-4.5"])
-    ]
-
-    for nombre, palabras in patrones_goles:
-
-        for palabra in palabras:
-
-            if palabra in t:
-                return nombre
-
-    # --------------------------------------------------------
-    # EMPATE 1T
-    # --------------------------------------------------------
-
-    if (
-        "empate 1t" in t
-        or
-        "empate al descanso" in t
-        or
-        "empate descanso" in t
-        or
-        "half time draw" in t
-    ):
+    if "empate 1t" in t:
         return "Empate 1T"
 
-    # --------------------------------------------------------
-    # 1X2
-    # --------------------------------------------------------
+    if "empate al descanso" in t:
+        return "Empate 1T"
 
     if "1x2" in t:
         return "1X2"
 
-    # --------------------------------------------------------
-    # OTROS
-    # --------------------------------------------------------
-
     return "Otra"
+
+
+# Mantener compatibilidad con el código anterior
+def identificar_estrategia(texto):
+
+    return identificar_mercado(texto)
 
 
 # ============================================================
@@ -517,18 +450,6 @@ def extraer_partido(texto):
         r"🆚\s*(.+?)\s*[-–]\s*(.+?)(?:\n|$)",
         texto,
         re.IGNORECASE
-    )
-
-    if patron:
-
-        return (
-            patron.group(1).strip(),
-            patron.group(2).strip()
-        )
-
-    patron = re.search(
-        r"(.+?)\s+[-–]\s+(.+)",
-        texto
     )
 
     if patron:
@@ -556,7 +477,11 @@ def extraer_liga(texto):
     )
 
     if patron:
-        return patron.group(1).strip()
+
+        return (
+            patron.group(1)
+            .strip()
+        )
 
     return "Desconocida"
 
@@ -573,7 +498,11 @@ def extraer_fecha(texto):
     )
 
     if patron:
-        return patron.group(1).strip()
+
+        return (
+            patron.group(1)
+            .strip()
+        )
 
     return ""
 
@@ -586,20 +515,14 @@ def extraer_cuota(texto):
 
     patrones = [
 
-        # Bet365
         r"bet365\s*:\s*([0-9]+(?:[.,][0-9]+)?)",
 
-        # Pinnacle
-        r"pinnacle\s*:\s*([0-9]+(?:[.,][0-9]+)?)",
+        r"cuota\s*[:=]\s*([0-9]+(?:[.,][0-9]+)?)",
 
-        # Cuota genérica
-        r"cuota\s*:\s*([0-9]+(?:[.,][0-9]+)?)",
+        r"cuotas?\s*[:=]\s*([0-9]+(?:[.,][0-9]+)?)",
 
-        # Odds
-        r"odds?\s*:\s*([0-9]+(?:[.,][0-9]+)?)",
+        r"odds?\s*[:=]\s*([0-9]+(?:[.,][0-9]+)?)"
 
-        # Resultado deseado + cuota
-        r"bet365\s+([0-9]+(?:[.,][0-9]+)?)"
     ]
 
     for patron in patrones:
@@ -622,6 +545,63 @@ def extraer_cuota(texto):
             except Exception:
                 pass
 
+    # --------------------------------------------------------
+    # Buscar cuota después del mercado
+    # Ejemplo:
+    # Ambos equipos marcan
+    # SI 2.10 NO 1.66
+    # --------------------------------------------------------
+
+    mercado = extraer_resultado_deseado(
+        texto
+    )
+
+    if mercado:
+
+        mercado_normalizado = normalizar(
+            mercado
+        )
+
+        if "no" in mercado_normalizado:
+
+            patron_no = re.search(
+                r"\bNO\s+([0-9]+(?:[.,][0-9]+)?)",
+                texto,
+                re.IGNORECASE
+            )
+
+            if patron_no:
+
+                try:
+
+                    return float(
+                        patron_no.group(1)
+                        .replace(",", ".")
+                    )
+
+                except Exception:
+                    pass
+
+        if "si" in mercado_normalizado:
+
+            patron_si = re.search(
+                r"\bSI\s+([0-9]+(?:[.,][0-9]+)?)",
+                texto,
+                re.IGNORECASE
+            )
+
+            if patron_si:
+
+                try:
+
+                    return float(
+                        patron_si.group(1)
+                        .replace(",", ".")
+                    )
+
+                except Exception:
+                    pass
+
     return None
 
 
@@ -631,15 +611,25 @@ def extraer_cuota(texto):
 
 def crear_apuesta(texto):
 
-    home, away = extraer_partido(texto)
+    home, away = extraer_partido(
+        texto
+    )
 
-    estrategia = identificar_estrategia(texto)
+    mercado = identificar_mercado(
+        texto
+    )
 
-    liga = extraer_liga(texto)
+    liga = extraer_liga(
+        texto
+    )
 
-    fecha_partido = extraer_fecha(texto)
+    fecha_partido = extraer_fecha(
+        texto
+    )
 
-    cuota = extraer_cuota(texto)
+    cuota = extraer_cuota(
+        texto
+    )
 
     apuesta = {
 
@@ -655,17 +645,23 @@ def crear_apuesta(texto):
                 timezone.utc
             ).isoformat(),
 
-        "home": home,
+        "home":
+            home,
 
-        "away": away,
+        "away":
+            away,
 
-        "liga": liga,
+        "liga":
+            liga,
 
         "fecha_partido":
             fecha_partido,
 
         "estrategia":
-            estrategia,
+            mercado,
+
+        "mercado":
+            mercado,
 
         "cuota":
             cuota,
@@ -711,41 +707,64 @@ def crear_apuesta(texto):
 # DUPLICADOS
 # ============================================================
 
-def apuesta_duplicada(apuestas, nueva):
+def apuesta_duplicada(
+    apuestas,
+    nueva
+):
 
     for apuesta in apuestas:
 
         if (
 
             normalizar(
-                apuesta.get("home", "")
+                apuesta.get(
+                    "home",
+                    ""
+                )
             )
             ==
             normalizar(
-                nueva.get("home", "")
+                nueva.get(
+                    "home",
+                    ""
+                )
             )
 
             and
 
             normalizar(
-                apuesta.get("away", "")
+                apuesta.get(
+                    "away",
+                    ""
+                )
             )
             ==
             normalizar(
-                nueva.get("away", "")
+                nueva.get(
+                    "away",
+                    ""
+                )
             )
 
             and
 
-            apuesta.get("estrategia")
+            apuesta.get(
+                "estrategia"
+            )
             ==
-            nueva.get("estrategia")
+            nueva.get(
+                "estrategia"
+            )
 
             and
 
-            apuesta.get("fecha_partido")
+            apuesta.get(
+                "fecha_partido"
+            )
             ==
-            nueva.get("fecha_partido")
+            nueva.get(
+                "fecha_partido"
+            )
         ):
 
             return True
@@ -757,33 +776,19 @@ def apuesta_duplicada(apuestas, nueva):
 # BOTÓN PANEL
 # ============================================================
 
-def botones_panel():
+def teclado_panel():
 
     return {
-
         "inline_keyboard": [
 
             [
-
                 {
-                    "text": "📊 Abrir panel",
-                    "callback_data": "panel"
+                    "text":
+                        "📊 ABRIR PANEL",
+
+                    "callback_data":
+                        "panel"
                 }
-
-            ],
-
-            [
-
-                {
-                    "text": "🏆 Estrategias",
-                    "callback_data": "estrategias"
-                },
-
-                {
-                    "text": "🟡 Pendientes",
-                    "callback_data": "pendientes"
-                }
-
             ]
 
         ]
@@ -791,10 +796,12 @@ def botones_panel():
 
 
 # ============================================================
-# BOTONES RESULTADO
+# BOTONES DE RESULTADO
 # ============================================================
 
-def botones_resultado(apuesta_id):
+def teclado_resultado(
+    apuesta_id
+):
 
     return {
 
@@ -803,15 +810,33 @@ def botones_resultado(apuesta_id):
             [
 
                 {
-                    "text": "✅ GANADA",
+                    "text":
+                        "✅ GANADA",
+
                     "callback_data":
-                        f"resultado_ganada:{apuesta_id}"
+                        f"resultado_ganada:"
+                        f"{apuesta_id}"
                 },
 
                 {
-                    "text": "❌ PERDIDA",
+                    "text":
+                        "❌ PERDIDA",
+
                     "callback_data":
-                        f"resultado_perdida:{apuesta_id}"
+                        f"resultado_perdida:"
+                        f"{apuesta_id}"
+                }
+
+            ],
+
+            [
+
+                {
+                    "text":
+                        "📊 ABRIR PANEL",
+
+                    "callback_data":
+                        "panel"
                 }
 
             ]
@@ -832,14 +857,13 @@ def enviar_apuesta_con_botones(
     if chat_id is None:
         chat_id = CHAT_ID
 
-    cuota = apuesta.get("cuota")
-
     cuota_texto = ""
 
-    if cuota is not None:
+    if apuesta.get("cuota") is not None:
 
         cuota_texto = (
-            f"💵 Cuota: {cuota:.2f}\n"
+            f"💵 Cuota: "
+            f"{apuesta['cuota']:.2f}\n"
         )
 
     mensaje = (
@@ -861,12 +885,27 @@ def enviar_apuesta_con_botones(
         f"📌 Estado: 🟡 PENDIENTE"
     )
 
-    return enviar(
-        mensaje,
-        chat_id,
-        botones_resultado(
-            apuesta["id"]
-        )
+    telegram_api(
+        "sendMessage",
+        {
+
+            "chat_id":
+                chat_id,
+
+            "text":
+                mensaje,
+
+            "parse_mode":
+                "HTML",
+
+            "reply_markup":
+                json.dumps(
+                    teclado_resultado(
+                        apuesta["id"]
+                    ),
+                    ensure_ascii=False
+                )
+        }
     )
 
 
@@ -878,16 +917,8 @@ def registrar_apuesta(texto):
 
     apuestas = cargar_apuestas()
 
-    nueva = crear_apuesta(texto)
-
-    print(
-        f"🎯 Mercado detectado: "
-        f"{nueva['estrategia']}"
-    )
-
-    print(
-        f"💵 Cuota detectada: "
-        f"{nueva['cuota']}"
+    nueva = crear_apuesta(
+        texto
     )
 
     if apuesta_duplicada(
@@ -895,15 +926,47 @@ def registrar_apuesta(texto):
         nueva
     ):
 
-        print("ℹ️ Apuesta duplicada")
+        print(
+            "ℹ️ Apuesta duplicada"
+        )
 
         return False
 
-    apuestas.append(nueva)
+    apuestas.append(
+        nueva
+    )
 
-    guardar_apuestas(apuestas)
+    guardar_apuestas(
+        apuestas
+    )
 
-    print("✅ Apuesta registrada")
+    print(
+        "===================================="
+    )
+
+    print(
+        "✅ NUEVA APUESTA"
+    )
+
+    print(
+        f"⚽ {nueva['home']} "
+        f"vs "
+        f"{nueva['away']}"
+    )
+
+    print(
+        f"🎯 Mercado: "
+        f"{nueva['estrategia']}"
+    )
+
+    print(
+        f"💵 Cuota: "
+        f"{nueva['cuota']}"
+    )
+
+    print(
+        "===================================="
+    )
 
     enviar_apuesta_con_botones(
         nueva
@@ -921,7 +984,10 @@ def api_football(
     params=None
 ):
 
-    url = API_URL + endpoint
+    url = (
+        API_URL +
+        endpoint
+    )
 
     headers = {
         "x-apisports-key":
@@ -937,12 +1003,12 @@ def api_football(
             timeout=30
         )
 
-        print(
-            f"⚽ API-Football "
-            f"{response.status_code}"
-        )
-
         if response.status_code != 200:
+
+            print(
+                f"❌ API-Football "
+                f"{response.status_code}"
+            )
 
             print(
                 response.text[:1000]
@@ -952,12 +1018,15 @@ def api_football(
 
         data = response.json()
 
-        errores = data.get("errors")
+        errores = data.get(
+            "errors"
+        )
 
         if errores:
 
             print(
-                f"⚠️ API errors: {errores}"
+                f"⚠️ API errors: "
+                f"{errores}"
             )
 
             return None
@@ -970,7 +1039,8 @@ def api_football(
     except Exception as e:
 
         print(
-            f"❌ Error API-Football: {e}"
+            f"❌ Error API-Football: "
+            f"{e}"
         )
 
         return None
@@ -980,7 +1050,9 @@ def api_football(
 # BUSCAR FIXTURE
 # ============================================================
 
-def buscar_fixture(apuesta):
+def buscar_fixture(
+    apuesta
+):
 
     home = apuesta.get(
         "home",
@@ -1007,7 +1079,10 @@ def buscar_fixture(apuesta):
 
     fechas = []
 
-    for desplazamiento in range(-2, 5):
+    for desplazamiento in range(
+        -1,
+        4
+    ):
 
         fecha = (
             ahora +
@@ -1018,14 +1093,18 @@ def buscar_fixture(apuesta):
             "%Y-%m-%d"
         )
 
-        fechas.append(fecha)
+        fechas.append(
+            fecha
+        )
 
     for fecha in fechas:
 
         fixtures = api_football(
             "/fixtures",
             {
-                "date": fecha,
+                "date":
+                    fecha,
+
                 "timezone":
                     "America/Bogota"
             }
@@ -1091,9 +1170,16 @@ def determinar_resultado(
     fixture
 ):
 
-    estrategia = apuesta.get(
-        "estrategia",
-        ""
+    mercado = apuesta.get(
+        "mercado",
+        apuesta.get(
+            "estrategia",
+            ""
+        )
+    )
+
+    mercado_n = normalizar(
+        mercado
     )
 
     goals = fixture.get(
@@ -1106,8 +1192,13 @@ def determinar_resultado(
         {}
     )
 
-    home_goals = goals.get("home")
-    away_goals = goals.get("away")
+    home_goals = goals.get(
+        "home"
+    )
+
+    away_goals = goals.get(
+        "away"
+    )
 
     if (
         home_goals is None
@@ -1121,28 +1212,29 @@ def determinar_resultado(
         away_goals
     )
 
-    # --------------------------------------------------------
-    # BTTS SI
-    # --------------------------------------------------------
+    ht = score.get(
+        "halftime",
+        {}
+    )
 
-    if estrategia == "BTTS SI":
+    ht_home = ht.get(
+        "home"
+    )
 
-        return (
-            "ganada"
-            if (
-                home_goals >= 1
-                and
-                away_goals >= 1
-            )
-            else
-            "perdida"
-        )
+    ht_away = ht.get(
+        "away"
+    )
 
-    # --------------------------------------------------------
-    # BTTS NO
-    # --------------------------------------------------------
+    # ========================================================
+    # BTTS
+    # ========================================================
 
-    if estrategia == "BTTS NO":
+    if (
+        "btts no" in mercado_n
+        or
+        "ambos equipos marcan no"
+        in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1151,15 +1243,36 @@ def determinar_resultado(
                 or
                 away_goals == 0
             )
-            else
-            "perdida"
+            else "perdida"
         )
 
-    # --------------------------------------------------------
-    # GOLES
-    # --------------------------------------------------------
+    if (
+        "btts si" in mercado_n
+        or
+        "ambos equipos marcan si"
+        in mercado_n
+        or
+        mercado_n == "btts"
+    ):
 
-    if estrategia == "Más de 0.5 goles":
+        return (
+            "ganada"
+            if (
+                home_goals >= 1
+                and
+                away_goals >= 1
+            )
+            else "perdida"
+        )
+
+    # ========================================================
+    # GOLES
+    # ========================================================
+
+    if (
+        "mas de 0.5" in mercado_n
+        or "+0.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1167,7 +1280,10 @@ def determinar_resultado(
             else "perdida"
         )
 
-    if estrategia == "Más de 1.5 goles":
+    if (
+        "mas de 1.5" in mercado_n
+        or "+1.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1175,7 +1291,10 @@ def determinar_resultado(
             else "perdida"
         )
 
-    if estrategia == "Más de 2.5 goles":
+    if (
+        "mas de 2.5" in mercado_n
+        or "+2.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1183,7 +1302,10 @@ def determinar_resultado(
             else "perdida"
         )
 
-    if estrategia == "Más de 3.5 goles":
+    if (
+        "mas de 3.5" in mercado_n
+        or "+3.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1191,7 +1313,10 @@ def determinar_resultado(
             else "perdida"
         )
 
-    if estrategia == "Más de 4.5 goles":
+    if (
+        "mas de 4.5" in mercado_n
+        or "+4.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1199,7 +1324,10 @@ def determinar_resultado(
             else "perdida"
         )
 
-    if estrategia == "Menos de 0.5 goles":
+    if (
+        "menos de 0.5" in mercado_n
+        or "-0.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1207,7 +1335,10 @@ def determinar_resultado(
             else "perdida"
         )
 
-    if estrategia == "Menos de 1.5 goles":
+    if (
+        "menos de 1.5" in mercado_n
+        or "-1.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1215,7 +1346,10 @@ def determinar_resultado(
             else "perdida"
         )
 
-    if estrategia == "Menos de 2.5 goles":
+    if (
+        "menos de 2.5" in mercado_n
+        or "-2.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1223,7 +1357,10 @@ def determinar_resultado(
             else "perdida"
         )
 
-    if estrategia == "Menos de 3.5 goles":
+    if (
+        "menos de 3.5" in mercado_n
+        or "-3.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1231,7 +1368,10 @@ def determinar_resultado(
             else "perdida"
         )
 
-    if estrategia == "Menos de 4.5 goles":
+    if (
+        "menos de 4.5" in mercado_n
+        or "-4.5" in mercado_n
+    ):
 
         return (
             "ganada"
@@ -1239,19 +1379,19 @@ def determinar_resultado(
             else "perdida"
         )
 
-    # --------------------------------------------------------
-    # EMPATE 1T
-    # --------------------------------------------------------
+    # ========================================================
+    # EMPATE PRIMER TIEMPO
+    # ========================================================
 
-    if estrategia == "Empate 1T":
-
-        ht = score.get(
-            "halftime",
-            {}
-        )
-
-        ht_home = ht.get("home")
-        ht_away = ht.get("away")
+    if (
+        "empate 1t" in mercado_n
+        or
+        "empate al descanso"
+        in mercado_n
+        or
+        "empate descanso"
+        in mercado_n
+    ):
 
         if (
             ht_home is None
@@ -1266,20 +1406,62 @@ def determinar_resultado(
             else "perdida"
         )
 
-    # --------------------------------------------------------
-    # OTROS MERCADOS
-    # --------------------------------------------------------
+    # ========================================================
+    # RESULTADO 1X2
+    # ========================================================
 
-    # Para mercados que BetMines mande y que
-    # todavía no tengamos parametrizados,
-    # se dejan disponibles los botones
-    # GANADA / PERDIDA.
+    if mercado_n in (
+        "1",
+        "local",
+        "ganador local",
+        "home"
+    ):
+
+        return (
+            "ganada"
+            if home_goals > away_goals
+            else "perdida"
+        )
+
+    if mercado_n in (
+        "x",
+        "empate",
+        "draw"
+    ):
+
+        return (
+            "ganada"
+            if home_goals == away_goals
+            else "perdida"
+        )
+
+    if mercado_n in (
+        "2",
+        "visitante",
+        "ganador visitante",
+        "away"
+    ):
+
+        return (
+            "ganada"
+            if away_goals > home_goals
+            else "perdida"
+        )
+
+    # ========================================================
+    # MERCADO NO PROGRAMADO
+    # ========================================================
+
+    print(
+        f"⚠️ Mercado no programado: "
+        f"{mercado}"
+    )
 
     return None
 
 
 # ============================================================
-# GANANCIA
+# GANANCIA SEGÚN CUOTA
 # ============================================================
 
 def calcular_ganancia(
@@ -1295,23 +1477,30 @@ def calcular_ganancia(
 
         return 0
 
-    cuota = apuesta.get("cuota")
+    cuota = apuesta.get(
+        "cuota"
+    )
 
     try:
 
-        cuota = float(cuota)
+        cuota = float(
+            cuota
+        )
 
-        if cuota > 1:
-
-            return round(
-                STAKE * (cuota - 1),
-                2
-            )
+        return round(
+            STAKE *
+            (cuota - 1),
+            2
+        )
 
     except Exception:
-        pass
 
-    return 0
+        print(
+            "⚠️ Apuesta ganada "
+            "sin cuota válida"
+        )
+
+        return 0
 
 
 # ============================================================
@@ -1323,7 +1512,9 @@ def cerrar_apuesta_manual(
     resultado
 ):
 
-    apuesta["resultado"] = resultado
+    apuesta["resultado"] = (
+        resultado
+    )
 
     apuesta["resultado_manual"] = True
 
@@ -1363,18 +1554,6 @@ def procesar_resultado_manual(
 
     except Exception:
 
-        telegram_api(
-            "answerCallbackQuery",
-            {
-                "callback_query_id":
-                    callback.get("id"),
-                "text":
-                    "❌ ID inválido",
-                "show_alert":
-                    True
-            }
-        )
-
         return
 
     apuestas = cargar_apuestas()
@@ -1393,6 +1572,7 @@ def procesar_resultado_manual(
                 break
 
         except Exception:
+
             continue
 
     if encontrada is None:
@@ -1402,8 +1582,10 @@ def procesar_resultado_manual(
             {
                 "callback_query_id":
                     callback.get("id"),
+
                 "text":
                     "❌ Apuesta no encontrada",
+
                 "show_alert":
                     True
             }
@@ -1421,8 +1603,10 @@ def procesar_resultado_manual(
             {
                 "callback_query_id":
                     callback.get("id"),
+
                 "text":
                     "⚠️ Esta apuesta ya está cerrada",
+
                 "show_alert":
                     True
             }
@@ -1435,7 +1619,9 @@ def procesar_resultado_manual(
         resultado
     )
 
-    guardar_apuestas(apuestas)
+    guardar_apuestas(
+        apuestas
+    )
 
     if resultado == "ganada":
 
@@ -1447,16 +1633,13 @@ def procesar_resultado_manual(
         icono = "🔴"
         texto_resultado = "PERDIDA"
 
-    cuota = encontrada.get(
-        "cuota"
-    )
-
     cuota_texto = ""
 
-    if cuota:
+    if encontrada.get("cuota") is not None:
 
         cuota_texto = (
-            f"💵 Cuota: {float(cuota):.2f}\n"
+            f"💵 Cuota: "
+            f"{encontrada['cuota']:.2f}\n"
         )
 
     mensaje = (
@@ -1469,7 +1652,7 @@ def procesar_resultado_manual(
 
         f"🏆 {encontrada['liga']}\n"
 
-        f"🎯 {encontrada['estrategia']}\n"
+        f"🎯 {encontrada['mercado']}\n"
 
         f"{cuota_texto}"
 
@@ -1495,21 +1678,20 @@ def procesar_resultado_manual(
         {}
     )
 
-    chat_id = chat.get("id")
+    chat_id = chat.get(
+        "id"
+    )
 
     message_id = message.get(
         "message_id"
     )
-
-    # --------------------------------------------------------
-    # ACTUALIZAR MENSAJE ORIGINAL
-    # --------------------------------------------------------
 
     if chat_id and message_id:
 
         telegram_api(
             "editMessageText",
             {
+
                 "chat_id":
                     chat_id,
 
@@ -1524,19 +1706,16 @@ def procesar_resultado_manual(
 
                 "reply_markup":
                     json.dumps(
-                        botones_panel(),
+                        teclado_panel(),
                         ensure_ascii=False
                     )
             }
         )
 
-    # --------------------------------------------------------
-    # CONFIRMAR BOTÓN
-    # --------------------------------------------------------
-
     telegram_api(
         "answerCallbackQuery",
         {
+
             "callback_query_id":
                 callback.get("id"),
 
@@ -1546,16 +1725,9 @@ def procesar_resultado_manual(
         }
     )
 
-    print(
-        f"✅ Resultado manual: "
-        f"{encontrada['home']} vs "
-        f"{encontrada['away']} = "
-        f"{resultado}"
-    )
-
 
 # ============================================================
-# RESULTADOS AUTOMÁTICOS
+# ACTUALIZAR RESULTADOS
 # ============================================================
 
 def actualizar_resultados():
@@ -1586,23 +1758,11 @@ def actualizar_resultados():
 
     for apuesta in pendientes:
 
-        print(
-            f"🔎 Buscando: "
-            f"{apuesta.get('home')} "
-            f"vs "
-            f"{apuesta.get('away')}"
-        )
-
         fixture = buscar_fixture(
             apuesta
         )
 
         if not fixture:
-
-            print(
-                "⏳ Partido todavía "
-                "no encontrado"
-            )
 
             continue
 
@@ -1616,10 +1776,6 @@ def actualizar_resultados():
             "short"
         )
 
-        print(
-            f"📌 Estado: {status}"
-        )
-
         estados_finales = {
             "FT",
             "AET",
@@ -1628,11 +1784,6 @@ def actualizar_resultados():
 
         if status not in estados_finales:
 
-            print(
-                "⏳ Partido todavía "
-                "no ha terminado"
-            )
-
             continue
 
         resultado = determinar_resultado(
@@ -1640,17 +1791,7 @@ def actualizar_resultados():
             fixture
         )
 
-        # ----------------------------------------------------
-        # MERCADO NO AUTOMATIZADO
-        # ----------------------------------------------------
-
         if resultado is None:
-
-            print(
-                f"⚠️ Mercado "
-                f"'{apuesta.get('estrategia')}' "
-                f"requiere resultado manual"
-            )
 
             continue
 
@@ -1669,7 +1810,9 @@ def actualizar_resultados():
             {}
         )
 
-        apuesta["resultado"] = resultado
+        apuesta["resultado"] = (
+            resultado
+        )
 
         apuesta["resultado_manual"] = False
 
@@ -1684,7 +1827,9 @@ def actualizar_resultados():
             fixture.get(
                 "fixture",
                 {}
-            ).get("id")
+            ).get(
+                "id"
+            )
         )
 
         apuesta["goles_home"] = (
@@ -1709,25 +1854,11 @@ def actualizar_resultados():
 
         cambios = True
 
-        if resultado == "ganada":
-
-            icono = "🟢"
-            resultado_texto = "GANADA"
-
-        else:
-
-            icono = "🔴"
-            resultado_texto = "PERDIDA"
-
-        cuota = apuesta.get("cuota")
-
-        cuota_texto = ""
-
-        if cuota:
-
-            cuota_texto = (
-                f"💵 Cuota: {float(cuota):.2f}\n"
-            )
+        icono = (
+            "🟢"
+            if resultado == "ganada"
+            else "🔴"
+        )
 
         mensaje = (
 
@@ -1739,48 +1870,54 @@ def actualizar_resultados():
 
             f"🏆 {apuesta['liga']}\n"
 
-            f"🎯 {apuesta['estrategia']}\n"
+            f"🎯 {apuesta['mercado']}\n"
 
-            f"{cuota_texto}"
+            + (
+                f"💵 Cuota: "
+                f"{apuesta['cuota']:.2f}\n"
+                if apuesta.get("cuota")
+                else ""
+            )
 
-            f"💰 Apuesta: "
+            + f"💰 Apuesta: "
             f"${STAKE:,.0f} COP\n"
 
-            f"📊 Resultado: "
+            f"📊 Resultado partido: "
             f"{goals.get('home')} - "
             f"{goals.get('away')}\n"
 
-            f"📌 Estado: "
-            f"<b>{resultado_texto}</b>\n"
+            f"📌 Resultado: "
+            f"<b>{resultado.upper()}</b>\n"
 
             f"💵 Resultado económico: "
             f"${apuesta['ganancia']:,.0f} COP"
         )
 
-        enviar(
-            mensaje,
-            CHAT_ID,
-            botones_panel()
-        )
+        telegram_api(
+            "sendMessage",
+            {
 
-        print(
-            f"✅ Cerrada: {resultado}"
+                "chat_id":
+                    CHAT_ID,
+
+                "text":
+                    mensaje,
+
+                "parse_mode":
+                    "HTML",
+
+                "reply_markup":
+                    json.dumps(
+                        teclado_panel(),
+                        ensure_ascii=False
+                    )
+            }
         )
 
     if cambios:
 
         guardar_apuestas(
             apuestas
-        )
-
-        print(
-            "💾 signals.json actualizado"
-        )
-
-    else:
-
-        print(
-            "ℹ️ No hubo resultados nuevos"
         )
 
     return cambios
@@ -1790,7 +1927,9 @@ def actualizar_resultados():
 # ESTADÍSTICAS
 # ============================================================
 
-def calcular_estadisticas(apuestas):
+def calcular_estadisticas(
+    apuestas
+):
 
     ganadas = 0
     perdidas = 0
@@ -1864,19 +2003,26 @@ def calcular_estadisticas(apuestas):
 
     return {
 
-        "total": len(apuestas),
+        "total":
+            len(apuestas),
 
-        "ganadas": ganadas,
+        "ganadas":
+            ganadas,
 
-        "perdidas": perdidas,
+        "perdidas":
+            perdidas,
 
-        "pendientes": pendientes,
+        "pendientes":
+            pendientes,
 
-        "ganancia": ganancia,
+        "ganancia":
+            ganancia,
 
-        "efectividad": efectividad,
+        "efectividad":
+            efectividad,
 
-        "roi": roi
+        "roi":
+            roi
     }
 
 
@@ -1933,7 +2079,7 @@ def estadisticas_periodo(
 
 
 # ============================================================
-# ESTADÍSTICAS POR ESTRATEGIA
+# ESTADÍSTICAS POR MERCADO
 # ============================================================
 
 def estrategias(apuestas):
@@ -1943,8 +2089,11 @@ def estrategias(apuestas):
     for apuesta in apuestas:
 
         nombre = apuesta.get(
-            "estrategia",
-            "Otra"
+            "mercado",
+            apuesta.get(
+                "estrategia",
+                "Otra"
+            )
         )
 
         if not nombre:
@@ -2000,42 +2149,44 @@ def estrategias(apuestas):
 
     resultado = []
 
-    for nombre, datos_estrategia in datos.items():
+    for nombre, d in datos.items():
 
         cerradas = (
-            datos_estrategia["ganadas"]
-            +
-            datos_estrategia["perdidas"]
+            d["ganadas"] +
+            d["perdidas"]
         )
 
         if cerradas:
 
             efectividad = (
-                datos_estrategia["ganadas"]
-                /
+                d["ganadas"] /
                 cerradas
-            ) * 100
-
-            invertido = (
-                cerradas *
-                STAKE
-            )
-
-            roi = (
-                datos_estrategia["ganancia"]
-                /
-                invertido
             ) * 100
 
         else:
 
             efectividad = 0
+
+        invertido = (
+            cerradas *
+            STAKE
+        )
+
+        if invertido:
+
+            roi = (
+                d["ganancia"] /
+                invertido
+            ) * 100
+
+        else:
+
             roi = 0
 
         resultado.append(
             (
                 nombre,
-                datos_estrategia,
+                d,
                 efectividad,
                 roi
             )
@@ -2043,7 +2194,7 @@ def estrategias(apuestas):
 
     resultado.sort(
         key=lambda x: (
-            x[2],
+            x[3],
             x[1]["ganancia"]
         ),
         reverse=True
@@ -2079,7 +2230,7 @@ def crear_panel():
         30
     )
 
-    texto = (
+    return (
 
         "📊 <b>PANEL FOOTBALL ALERTS</b>\n\n"
 
@@ -2134,11 +2285,9 @@ def crear_panel():
         f"💵 ${mes['ganancia']:,.0f} COP"
     )
 
-    return texto
-
 
 # ============================================================
-# PANEL ESTRATEGIAS
+# PANEL MERCADOS
 # ============================================================
 
 def crear_panel_estrategias():
@@ -2152,7 +2301,7 @@ def crear_panel_estrategias():
     if not datos:
 
         return (
-            "🏆 <b>ESTRATEGIAS</b>\n\n"
+            "🏆 <b>ESTRATEGIAS / MERCADOS</b>\n\n"
             "Todavía no hay apuestas."
         )
 
@@ -2164,10 +2313,10 @@ def crear_panel_estrategias():
 
     for (
         nombre,
-        datos_estrategia,
+        d,
         efectividad,
         roi
-    ) in datos[:20]:
+    ) in datos:
 
         mensaje += (
 
@@ -2175,16 +2324,16 @@ def crear_panel_estrategias():
             f"<b>{nombre}</b>\n"
 
             f"   🎯 Apuestas: "
-            f"{datos_estrategia['total']}\n"
+            f"{d['total']}\n"
 
             f"   🟢 Ganadas: "
-            f"{datos_estrategia['ganadas']}\n"
+            f"{d['ganadas']}\n"
 
             f"   🔴 Perdidas: "
-            f"{datos_estrategia['perdidas']}\n"
+            f"{d['perdidas']}\n"
 
             f"   🟡 Pendientes: "
-            f"{datos_estrategia['pendientes']}\n"
+            f"{d['pendientes']}\n"
 
             f"   📈 Efectividad: "
             f"{efectividad:.1f}%\n"
@@ -2193,7 +2342,7 @@ def crear_panel_estrategias():
             f"{roi:.2f}%\n"
 
             f"   💵 Resultado: "
-            f"${datos_estrategia['ganancia']:,.0f} COP\n\n"
+            f"${d['ganancia']:,.0f} COP\n\n"
         )
 
         posicion += 1
@@ -2241,7 +2390,7 @@ def crear_pendientes():
         if cuota:
 
             cuota_texto = (
-                f"💵 Cuota: {float(cuota):.2f}\n"
+                f"💵 Cuota: {cuota:.2f}\n"
             )
 
         mensaje += (
@@ -2251,7 +2400,7 @@ def crear_pendientes():
             f"⚽ {apuesta['home']} - "
             f"{apuesta['away']}\n"
 
-            f"🎯 {apuesta['estrategia']}\n"
+            f"🎯 {apuesta['mercado']}\n"
 
             f"{cuota_texto}"
 
@@ -2262,71 +2411,125 @@ def crear_pendientes():
 
 
 # ============================================================
-# PANEL CON BOTONES
+# BOTONES DEL PANEL
 # ============================================================
 
-def enviar_panel(chat_id):
+def teclado_panel_completo():
+
+    return {
+
+        "inline_keyboard": [
+
+            [
+
+                {
+                    "text":
+                        "📊 Actualizar",
+
+                    "callback_data":
+                        "panel"
+                },
+
+                {
+                    "text":
+                        "🏆 Mercados",
+
+                    "callback_data":
+                        "estrategias"
+                }
+
+            ],
+
+            [
+
+                {
+                    "text":
+                        "🟡 Pendientes",
+
+                    "callback_data":
+                        "pendientes"
+                }
+
+            ]
+
+        ]
+    }
+
+
+def enviar_panel(
+    chat_id,
+    message_id=None
+):
 
     texto = crear_panel()
 
-    enviar(
-        texto,
-        chat_id,
-        botones_panel()
-    )
+    teclado = teclado_panel_completo()
+
+    if message_id:
+
+        telegram_api(
+            "editMessageText",
+            {
+
+                "chat_id":
+                    chat_id,
+
+                "message_id":
+                    message_id,
+
+                "text":
+                    texto,
+
+                "parse_mode":
+                    "HTML",
+
+                "reply_markup":
+                    json.dumps(
+                        teclado,
+                        ensure_ascii=False
+                    )
+            }
+        )
+
+    else:
+
+        telegram_api(
+            "sendMessage",
+            {
+
+                "chat_id":
+                    chat_id,
+
+                "text":
+                    texto,
+
+                "parse_mode":
+                    "HTML",
+
+                "reply_markup":
+                    json.dumps(
+                        teclado,
+                        ensure_ascii=False
+                    )
+            }
+        )
 
 
 # ============================================================
 # CALLBACK
 # ============================================================
 
-def responder_callback(callback):
+def responder_callback(
+    callback
+):
 
     data = callback.get(
         "data",
         ""
     )
 
-    # --------------------------------------------------------
-    # GANADA
-    # --------------------------------------------------------
-
-    if data.startswith(
-        "resultado_ganada:"
-    ):
-
-        procesar_resultado_manual(
-            callback,
-            "ganada"
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # PERDIDA
-    # --------------------------------------------------------
-
-    if data.startswith(
-        "resultado_perdida:"
-    ):
-
-        procesar_resultado_manual(
-            callback,
-            "perdida"
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # CONFIRMACIÓN
-    # --------------------------------------------------------
-
-    telegram_api(
-        "answerCallbackQuery",
-        {
-            "callback_query_id":
-                callback.get("id")
-        }
+    callback_id = callback.get(
+        "id"
     )
 
     message = callback.get(
@@ -2343,7 +2546,38 @@ def responder_callback(callback):
         "id"
     )
 
-    if not chat_id:
+    message_id = message.get(
+        "message_id"
+    )
+
+    # --------------------------------------------------------
+    # RESULTADO GANADA
+    # --------------------------------------------------------
+
+    if data.startswith(
+        "resultado_ganada:"
+    ):
+
+        procesar_resultado_manual(
+            callback,
+            "ganada"
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # RESULTADO PERDIDA
+    # --------------------------------------------------------
+
+    if data.startswith(
+        "resultado_perdida:"
+    ):
+
+        procesar_resultado_manual(
+            callback,
+            "perdida"
+        )
+
         return
 
     # --------------------------------------------------------
@@ -2352,66 +2586,100 @@ def responder_callback(callback):
 
     if data == "panel":
 
-        texto = crear_panel()
-
-        message_id = message.get(
-            "message_id"
+        telegram_api(
+            "answerCallbackQuery",
+            {
+                "callback_query_id":
+                    callback_id
+            }
         )
 
-        if message_id:
+        if chat_id:
+
+            enviar_panel(
+                chat_id,
+                message_id
+            )
+
+        return
+
+    # --------------------------------------------------------
+    # MERCADOS
+    # --------------------------------------------------------
+
+    if data == "estrategias":
+
+        telegram_api(
+            "answerCallbackQuery",
+            {
+                "callback_query_id":
+                    callback_id
+            }
+        )
+
+        if chat_id:
 
             telegram_api(
-                "editMessageText",
+                "sendMessage",
                 {
+
                     "chat_id":
                         chat_id,
 
-                    "message_id":
-                        message_id,
-
                     "text":
-                        texto,
+                        crear_panel_estrategias(),
 
                     "parse_mode":
                         "HTML",
 
                     "reply_markup":
                         json.dumps(
-                            botones_panel(),
+                            teclado_panel(),
                             ensure_ascii=False
                         )
                 }
             )
 
-        else:
-
-            enviar_panel(
-                chat_id
-            )
-
-    # --------------------------------------------------------
-    # ESTRATEGIAS
-    # --------------------------------------------------------
-
-    elif data == "estrategias":
-
-        enviar(
-            crear_panel_estrategias(),
-            chat_id,
-            botones_panel()
-        )
+        return
 
     # --------------------------------------------------------
     # PENDIENTES
     # --------------------------------------------------------
 
-    elif data == "pendientes":
+    if data == "pendientes":
 
-        enviar(
-            crear_pendientes(),
-            chat_id,
-            botones_panel()
+        telegram_api(
+            "answerCallbackQuery",
+            {
+                "callback_query_id":
+                    callback_id
+            }
         )
+
+        if chat_id:
+
+            telegram_api(
+                "sendMessage",
+                {
+
+                    "chat_id":
+                        chat_id,
+
+                    "text":
+                        crear_pendientes(),
+
+                    "parse_mode":
+                        "HTML",
+
+                    "reply_markup":
+                        json.dumps(
+                            teclado_panel(),
+                            ensure_ascii=False
+                        )
+                }
+            )
+
+        return
 
 
 # ============================================================
@@ -2434,15 +2702,13 @@ def procesar_comando(
 
             "⚽ <b>FOOTBALL ALERTS</b>\n\n"
 
-            "✅ Bot conectado correctamente.\n\n"
+            "Bot conectado correctamente.\n\n"
 
             "📊 /panel\n"
             "🏆 /estrategias\n"
             "🟡 /pendientes",
 
-            chat_id,
-
-            botones_panel()
+            chat_id
         )
 
     elif comando == "/panel":
@@ -2453,18 +2719,48 @@ def procesar_comando(
 
     elif comando == "/estrategias":
 
-        enviar(
-            crear_panel_estrategias(),
-            chat_id,
-            botones_panel()
+        telegram_api(
+            "sendMessage",
+            {
+
+                "chat_id":
+                    chat_id,
+
+                "text":
+                    crear_panel_estrategias(),
+
+                "parse_mode":
+                    "HTML",
+
+                "reply_markup":
+                    json.dumps(
+                        teclado_panel(),
+                        ensure_ascii=False
+                    )
+            }
         )
 
     elif comando == "/pendientes":
 
-        enviar(
-            crear_pendientes(),
-            chat_id,
-            botones_panel()
+        telegram_api(
+            "sendMessage",
+            {
+
+                "chat_id":
+                    chat_id,
+
+                "text":
+                    crear_pendientes(),
+
+                "parse_mode":
+                    "HTML",
+
+                "reply_markup":
+                    json.dumps(
+                        teclado_panel(),
+                        ensure_ascii=False
+                    )
+            }
         )
 
 
@@ -2472,7 +2768,9 @@ def procesar_comando(
 # MENSAJES
 # ============================================================
 
-def procesar_mensaje(message):
+def procesar_mensaje(
+    message
+):
 
     chat = message.get(
         "chat",
@@ -2558,7 +2856,6 @@ def recibir_telegram():
         if not respuesta:
 
             time.sleep(2)
-
             continue
 
         resultados = respuesta.get(
@@ -2609,7 +2906,7 @@ def recibir_telegram():
         time.sleep(1)
 
     print(
-        "📡 Fin recepción Telegram"
+        "📡 Fin de recepción Telegram"
     )
 
 
@@ -2623,26 +2920,17 @@ def main():
         "🚀 INICIO DE EJECUCIÓN"
     )
 
-    # --------------------------------------------------------
-    # 1. RECIBIR ALERTAS Y BOTONES
-    # --------------------------------------------------------
-
+    # 1. Recibir alertas y botones
     recibir_telegram()
 
-    # --------------------------------------------------------
-    # 2. RESULTADOS AUTOMÁTICOS
-    # --------------------------------------------------------
-
+    # 2. Actualizar resultados
     print(
         "⚽ ACTUALIZANDO RESULTADOS..."
     )
 
     actualizar_resultados()
 
-    # --------------------------------------------------------
-    # 3. RESUMEN
-    # --------------------------------------------------------
-
+    # 3. Resumen
     apuestas = cargar_apuestas()
 
     stats = calcular_estadisticas(
