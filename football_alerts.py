@@ -1,458 +1,825 @@
 import os
+import re
+import json
+import time
 import requests
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-API_KEY = os.environ["API_FOOTBALL_KEY"]
+# ============================================================
+# CONFIGURACIÓN
+# ============================================================
+
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-API_URL = "https://v3.football.api-sports.io"
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-HEADERS = {
-    "x-apisports-key": API_KEY
-}
+DATA_FILE = "signals.json"
 
-session = requests.Session()
-session.headers.update(HEADERS)
+# ============================================================
+# BASE DE DATOS SIMPLE
+# ============================================================
 
-# Guardamos resultados para no consultar dos veces al mismo equipo
-team_cache = {}
+def load_signals():
 
-# Para evitar mandar la misma alerta repetidamente
-sent_alerts = set()
-
-
-def api_get(endpoint, params):
+    if not os.path.exists(DATA_FILE):
+        return []
 
     try:
-        r = session.get(
-            f"{API_URL}/{endpoint}",
-            params=params,
-            timeout=30
-        )
 
-        data = r.json()
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
 
-        if not r.ok:
-            print("Error HTTP:", r.status_code)
-            print(data)
-            return []
+    except Exception:
 
-        if data.get("errors"):
-            print("Error API:", data["errors"])
-            return []
-
-        return data.get("response", [])
-
-    except Exception as e:
-        print("Error de conexión:", e)
         return []
 
 
-def send_telegram(message):
+def save_signals(signals):
 
-    if not CHAT_ID:
-        print("TELEGRAM_CHAT_ID no está configurado.")
-        return False
+    with open(
+        DATA_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            signals,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
+
+
+# ============================================================
+# TELEGRAM
+# ============================================================
+
+def send_message(chat_id, message):
 
     try:
 
         r = requests.post(
             f"{TELEGRAM_URL}/sendMessage",
             data={
-                "chat_id": CHAT_ID,
+                "chat_id": chat_id,
                 "text": message
             },
             timeout=30
         )
 
-        if r.ok:
-            return True
-
-        print("Error Telegram:", r.text)
-        return False
+        return r.ok
 
     except Exception as e:
-        print("Error enviando Telegram:", e)
+
+        print("Error Telegram:", e)
+
         return False
 
 
-def get_tomorrow():
+# ============================================================
+# EXTRAER DATOS DE LA ALERTA
+# ============================================================
 
-    return (
-        datetime.now(timezone.utc)
-        + timedelta(days=1)
-    ).strftime("%Y-%m-%d")
+def extract_probability(text):
 
+    patterns = [
+        r'probabilidad\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*%',
+        r'probability\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*%',
+        r'(\d+(?:\.\d+)?)\s*%'
+    ]
 
-def get_tomorrow_fixtures():
+    for pattern in patterns:
 
-    tomorrow = get_tomorrow()
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE
+        )
 
-    print("")
-    print("Buscando partidos del:", tomorrow)
+        if match:
+            return float(match.group(1))
 
-    fixtures = api_get(
-        "fixtures",
-        {
-            "date": tomorrow
-        }
-    )
-
-    return fixtures
-
-
-def get_last_10(team_id, before_date):
-
-    cache_key = (
-        team_id,
-        before_date
-    )
-
-    if cache_key in team_cache:
-        return team_cache[cache_key]
-
-    # Buscamos aproximadamente 3 meses hacia atrás.
-    # No utilizamos last=10 porque el plan gratuito no lo permite.
-
-    before = datetime.strptime(
-        before_date,
-        "%Y-%m-%d"
-    )
-
-    start = before - timedelta(days=120)
-
-    fixtures = api_get(
-        "fixtures",
-        {
-            "team": team_id,
-            "from": start.strftime("%Y-%m-%d"),
-            "to": (
-                before - timedelta(days=1)
-            ).strftime("%Y-%m-%d")
-        }
-    )
-
-    finished = []
-
-    for f in fixtures:
-
-        status = f["fixture"]["status"]["short"]
-
-        if status in [
-            "FT",
-            "AET",
-            "PEN"
-        ]:
-
-            finished.append(f)
-
-    # Ordenar del más reciente al más antiguo
-
-    finished.sort(
-        key=lambda x: x["fixture"]["date"],
-        reverse=True
-    )
-
-    result = finished[:10]
-
-    team_cache[cache_key] = result
-
-    return result
+    return None
 
 
-def calculate_stats(fixtures, team_id):
+def extract_odds(text):
 
-    total = 0
+    patterns = [
+        r'cuota\s*[:\-]?\s*(\d+(?:[.,]\d+)?)',
+        r'odd\s*[:\-]?\s*(\d+(?:[.,]\d+)?)',
+        r'odds\s*[:\-]?\s*(\d+(?:[.,]\d+)?)'
+    ]
 
-    btts = 0
-    over25 = 0
-    halftime_draw = 0
+    for pattern in patterns:
 
-    for f in fixtures:
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE
+        )
 
-        goals = f.get("goals", {})
-        score = f.get("score", {})
+        if match:
 
-        hg = goals.get("home")
-        ag = goals.get("away")
+            return float(
+                match.group(1).replace(",", ".")
+            )
 
-        ht = score.get("halftime", {})
+    return None
 
-        hth = ht.get("home")
-        hta = ht.get("away")
 
-        if (
-            hg is None
-            or ag is None
-            or hth is None
-            or hta is None
-        ):
+def detect_strategy(text):
+
+    text_lower = text.lower()
+
+    if (
+        "ambos marcan" in text_lower
+        or "btts" in text_lower
+        or "both teams to score" in text_lower
+    ):
+        return "BTTS"
+
+    if (
+        "más de 2.5" in text_lower
+        or "over 2.5" in text_lower
+        or "over2.5" in text_lower
+    ):
+        return "OVER 2.5"
+
+    if (
+        "empate 1t" in text_lower
+        or "empate 1er tiempo" in text_lower
+        or "half time draw" in text_lower
+        or "ht draw" in text_lower
+    ):
+        return "EMPATE 1T"
+
+    return "OTRA"
+
+
+def extract_match(text):
+
+    # Intenta detectar:
+    # Equipo A vs Equipo B
+    # Equipo A - Equipo B
+    # Equipo A v Equipo B
+
+    patterns = [
+        r'(.+?)\s+vs\.?\s+(.+)',
+        r'(.+?)\s+-\s+(.+)',
+        r'(.+?)\s+v\s+(.+)'
+    ]
+
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+    for line in lines:
+
+        match = None
+
+        for pattern in patterns:
+
+            match = re.search(
+                pattern,
+                line,
+                re.IGNORECASE
+            )
+
+            if match:
+                break
+
+        if not match:
             continue
 
-        total += 1
+        home = match.group(1).strip()
+        away = match.group(2).strip()
 
-        # Ambos marcan
+        # Evitar detectar frases que no sean partidos
+        if len(home) > 2 and len(away) > 2:
 
-        if hg > 0 and ag > 0:
-            btts += 1
+            return f"{home} vs {away}"
 
-        # Más de 2.5 goles
+    return "No identificado"
 
-        if hg + ag >= 3:
-            over25 += 1
 
-        # Empate al descanso
+# ============================================================
+# REGISTRAR ALERTA
+# ============================================================
 
-        if hth == hta:
-            halftime_draw += 1
+def register_signal(text):
 
-    if total == 0:
-        return None
+    signals = load_signals()
 
-    return {
-        "total": total,
-        "btts_pct": btts / total * 100,
-        "over25_pct": over25 / total * 100,
-        "ht_draw_pct": halftime_draw / total * 100
+    strategy = detect_strategy(text)
+    probability = extract_probability(text)
+    odds = extract_odds(text)
+    match = extract_match(text)
+
+    signal = {
+
+        "id": len(signals) + 1,
+
+        "date": datetime.now(
+            timezone.utc
+        ).strftime("%Y-%m-%d %H:%M:%S"),
+
+        "match": match,
+
+        "strategy": strategy,
+
+        "probability": probability,
+
+        "odds": odds,
+
+        "result": "PENDIENTE",
+
+        "raw_message": text
     }
 
+    signals.append(signal)
 
-def average(a, b):
+    save_signals(signals)
 
-    return (a + b) / 2
+    return signal
 
 
-def main():
+# ============================================================
+# PANEL
+# ============================================================
 
-    print("")
-    print("======================================")
-    print("       BOT BTTS / OVER / HT")
-    print("======================================")
+def panel():
 
-    fixtures = get_tomorrow_fixtures()
+    signals = load_signals()
 
-    print(
-        "Partidos encontrados:",
-        len(fixtures)
+    if not signals:
+
+        return (
+            "📊 PANEL\n\n"
+            "Todavía no hay señales registradas."
+        )
+
+    total = len(signals)
+
+    won = sum(
+        1
+        for s in signals
+        if s["result"] == "GANADA"
     )
 
-    if not fixtures:
-        print("No se encontraron partidos.")
-        return
+    lost = sum(
+        1
+        for s in signals
+        if s["result"] == "PERDIDA"
+    )
 
-    alerts = 0
+    pending = sum(
+        1
+        for s in signals
+        if s["result"] == "PENDIENTE"
+    )
 
-    tomorrow = get_tomorrow()
+    finished = won + lost
 
-    for index, fixture in enumerate(fixtures, 1):
+    if finished > 0:
 
-        status = fixture["fixture"]["status"]["short"]
+        effectiveness = (
+            won / finished
+        ) * 100
 
-        if status in [
-            "FT",
-            "AET",
-            "PEN",
-            "CANC",
-            "PST",
-            "ABD"
-        ]:
-            continue
+    else:
 
-        home = fixture["teams"]["home"]
-        away = fixture["teams"]["away"]
+        effectiveness = 0
 
-        print("")
-        print(
-            f"[{index}/{len(fixtures)}] "
-            f"{home['name']} vs {away['name']}"
-        )
+    # ROI sencillo con stake de 1 unidad
 
-        home_history = get_last_10(
-            home["id"],
-            tomorrow
-        )
+    profit = 0
 
-        away_history = get_last_10(
-            away["id"],
-            tomorrow
-        )
+    for signal in signals:
 
-        if (
-            len(home_history) < 10
-            or len(away_history) < 10
-        ):
+        if signal["result"] == "GANADA":
 
-            print(
-                "Menos de 10 partidos disponibles."
-            )
+            odds = signal.get("odds")
 
-            continue
+            if odds:
+                profit += odds - 1
+            else:
+                profit += 1
 
-        home_stats = calculate_stats(
-            home_history,
-            home["id"]
-        )
+        elif signal["result"] == "PERDIDA":
 
-        away_stats = calculate_stats(
-            away_history,
-            away["id"]
-        )
+            profit -= 1
 
-        if not home_stats or not away_stats:
-            continue
+    if total > 0:
 
-        # ==============================
-        # BTTS
-        # ==============================
+        roi = (
+            profit / total
+        ) * 100
 
-        btts = average(
-            home_stats["btts_pct"],
-            away_stats["btts_pct"]
-        )
+    else:
 
-        # ==============================
-        # OVER 2.5
-        # ==============================
+        roi = 0
 
-        over25 = average(
-            home_stats["over25_pct"],
-            away_stats["over25_pct"]
-        )
-
-        # ==============================
-        # EMPATE AL DESCANSO
-        # ==============================
-
-        ht_draw = average(
-            home_stats["ht_draw_pct"],
-            away_stats["ht_draw_pct"]
-        )
-
-        print(
-            f"BTTS: {btts:.1f}% | "
-            f"Over 2.5: {over25:.1f}% | "
-            f"HT Draw: {ht_draw:.1f}%"
-        )
-
-        detected = []
-
-        if btts > 70:
-
-            detected.append(
-                f"⚽ Ambos marcan: {btts:.1f}%"
-            )
-
-        if over25 > 70:
-
-            detected.append(
-                f"🔥 Más de 2.5 goles: {over25:.1f}%"
-            )
-
-        if ht_draw > 70:
-
-            detected.append(
-                f"🤝 Empate 1er tiempo: {ht_draw:.1f}%"
-            )
-
-        if not detected:
-            continue
-
-        # Identificador para evitar duplicados
-
-        alert_id = (
-            f"{tomorrow}_"
-            f"{home['id']}_"
-            f"{away['id']}"
-        )
-
-        if alert_id in sent_alerts:
-            continue
-
-        sent_alerts.add(alert_id)
-
-        message = f"""
-🚨 ALERTA ESTADÍSTICA 🚨
-
-⚽ {home['name']} vs {away['name']}
-
-🏆 {fixture['league']['name']}
-
-📅 {tomorrow}
+    return f"""
+📊 PANEL DE RENDIMIENTO
 
 ━━━━━━━━━━━━━━━━
-📊 ÚLTIMOS 10 PARTIDOS
-━━━━━━━━━━━━━━━━
 
-🏠 {home['name']}
+📥 Total señales: {total}
 
-⚽ BTTS:
-{home_stats['btts_pct']:.1f}%
+✅ Ganadas: {won}
+❌ Perdidas: {lost}
+⏳ Pendientes: {pending}
 
-🔥 Over 2.5:
-{home_stats['over25_pct']:.1f}%
+🎯 Efectividad:
+{effectiveness:.1f}%
 
-🤝 Empate 1T:
-{home_stats['ht_draw_pct']:.1f}%
+💰 Beneficio:
+{profit:+.2f} unidades
 
-
-✈️ {away['name']}
-
-⚽ BTTS:
-{away_stats['btts_pct']:.1f}%
-
-🔥 Over 2.5:
-{away_stats['over25_pct']:.1f}%
-
-🤝 Empate 1T:
-{away_stats['ht_draw_pct']:.1f}%
+📈 ROI:
+{roi:+.1f}%
 
 ━━━━━━━━━━━━━━━━
-🎯 PATRONES >70%
-━━━━━━━━━━━━━━━━
+
+🤖 Apuestasmurcia Bot
 """
 
-        for item in detected:
-            message += f"\n✅ {item}"
 
-        message += """
+# ============================================================
+# RENDIMIENTO POR ESTRATEGIA
+# ============================================================
 
-━━━━━━━━━━━━━━━━
+def strategies_panel():
 
-📌 Indicador calculado usando
-los últimos 10 partidos disponibles.
+    signals = load_signals()
 
-⚠️ Es una señal estadística y
-no garantiza el resultado.
-"""
+    if not signals:
 
-        print("")
-        print(message)
+        return "📊 No hay señales registradas."
 
-        if send_telegram(message):
+    strategies = {}
 
-            alerts += 1
-            print("✅ Alerta enviada a Telegram.")
+    for signal in signals:
+
+        strategy = signal["strategy"]
+
+        if strategy not in strategies:
+
+            strategies[strategy] = {
+                "total": 0,
+                "won": 0,
+                "lost": 0
+            }
+
+        strategies[strategy]["total"] += 1
+
+        if signal["result"] == "GANADA":
+            strategies[strategy]["won"] += 1
+
+        elif signal["result"] == "PERDIDA":
+            strategies[strategy]["lost"] += 1
+
+    message = "🎯 RENDIMIENTO POR ESTRATEGIA\n\n"
+
+    for strategy, data in strategies.items():
+
+        finished = (
+            data["won"]
+            + data["lost"]
+        )
+
+        if finished:
+
+            pct = (
+                data["won"]
+                / finished
+            ) * 100
 
         else:
 
-            print("❌ No se pudo enviar la alerta.")
+            pct = 0
+
+        message += (
+            f"🏷️ {strategy}\n"
+            f"📥 Señales: {data['total']}\n"
+            f"✅ {data['won']} "
+            f"❌ {data['lost']}\n"
+            f"🎯 Efectividad: {pct:.1f}%\n\n"
+        )
+
+    return message
+
+
+# ============================================================
+# SEÑALES PENDIENTES
+# ============================================================
+
+def pending_panel():
+
+    signals = load_signals()
+
+    pending = [
+        s
+        for s in signals
+        if s["result"] == "PENDIENTE"
+    ]
+
+    if not pending:
+
+        return "⏳ No hay señales pendientes."
+
+    message = "⏳ SEÑALES PENDIENTES\n\n"
+
+    for signal in pending[-20:]:
+
+        probability = signal["probability"]
+
+        if probability is not None:
+            probability_text = f"{probability:.1f}%"
+        else:
+            probability_text = "N/D"
+
+        message += (
+            f"#{signal['id']} "
+            f"{signal['match']}\n"
+            f"🎯 {signal['strategy']}\n"
+            f"📊 {probability_text}\n"
+            f"💰 {signal['odds'] or 'N/D'}\n\n"
+        )
+
+    return message
+
+
+# ============================================================
+# RESULTADO
+# ============================================================
+
+def update_result(signal_id, result):
+
+    signals = load_signals()
+
+    for signal in signals:
+
+        if signal["id"] == signal_id:
+
+            signal["result"] = result
+
+            save_signals(signals)
+
+            return signal
+
+    return None
+
+
+# ============================================================
+# PROCESAR MENSAJES
+# ============================================================
+
+def process_message(message):
+
+    chat = message.get("chat", {})
+
+    chat_id = chat.get("id")
+
+    text = message.get(
+        "text",
+        ""
+    ).strip()
+
+    if not text:
+        return
+
+    # --------------------------
+    # /start
+    # --------------------------
+
+    if text == "/start":
+
+        send_message(
+            chat_id,
+            """
+🤖 APUESTASMURCIA BOT
+
+Estoy funcionando.
+
+📥 Envíame una alerta de BetMines
+copiando y pegando el mensaje.
+
+Comandos:
+
+/panel
+/hoy
+/estrategias
+/pendientes
+
+Para actualizar resultados:
+
+/ganada ID
+/perdida ID
+"""
+        )
+
+        return
+
+    # --------------------------
+    # /panel
+    # --------------------------
+
+    if text == "/panel":
+
+        send_message(
+            chat_id,
+            panel()
+        )
+
+        return
+
+    # --------------------------
+    # /estrategias
+    # --------------------------
+
+    if text == "/estrategias":
+
+        send_message(
+            chat_id,
+            strategies_panel()
+        )
+
+        return
+
+    # --------------------------
+    # /pendientes
+    # --------------------------
+
+    if text == "/pendientes":
+
+        send_message(
+            chat_id,
+            pending_panel()
+        )
+
+        return
+
+    # --------------------------
+    # /hoy
+    # --------------------------
+
+    if text == "/hoy":
+
+        today = datetime.now(
+            timezone.utc
+        ).strftime("%Y-%m-%d")
+
+        signals = load_signals()
+
+        today_signals = [
+            s
+            for s in signals
+            if s["date"].startswith(today)
+        ]
+
+        if not today_signals:
+
+            send_message(
+                chat_id,
+                "📅 No hay señales registradas hoy."
+            )
+
+            return
+
+        message_out = "📅 SEÑALES DE HOY\n\n"
+
+        for signal in today_signals:
+
+            message_out += (
+                f"#{signal['id']} "
+                f"{signal['match']}\n"
+                f"🎯 {signal['strategy']}\n"
+                f"📊 {signal['probability'] or 'N/D'}%\n"
+                f"💰 {signal['odds'] or 'N/D'}\n"
+                f"📌 {signal['result']}\n\n"
+            )
+
+        send_message(
+            chat_id,
+            message_out
+        )
+
+        return
+
+    # --------------------------
+    # /ganada
+    # --------------------------
+
+    match = re.match(
+        r'^/ganada\s+(\d+)$',
+        text
+    )
+
+    if match:
+
+        signal_id = int(
+            match.group(1)
+        )
+
+        signal = update_result(
+            signal_id,
+            "GANADA"
+        )
+
+        if signal:
+
+            send_message(
+                chat_id,
+                f"✅ Señal #{signal_id} marcada como GANADA."
+            )
+
+        else:
+
+            send_message(
+                chat_id,
+                "❌ No encontré esa señal."
+            )
+
+        return
+
+    # --------------------------
+    # /perdida
+    # --------------------------
+
+    match = re.match(
+        r'^/perdida\s+(\d+)$',
+        text
+    )
+
+    if match:
+
+        signal_id = int(
+            match.group(1)
+        )
+
+        signal = update_result(
+            signal_id,
+            "PERDIDA"
+        )
+
+        if signal:
+
+            send_message(
+                chat_id,
+                f"❌ Señal #{signal_id} marcada como PERDIDA."
+            )
+
+        else:
+
+            send_message(
+                chat_id,
+                "❌ No encontré esa señal."
+            )
+
+        return
+
+    # ========================================================
+    # SI NO ES COMANDO → ES UNA ALERTA DE BETMINES
+    # ========================================================
+
+    signal = register_signal(text)
+
+    probability = signal["probability"]
+
+    if probability is not None:
+
+        probability_text = (
+            f"{probability:.1f}%"
+        )
+
+    else:
+
+        probability_text = "No detectada"
+
+    odds = signal["odds"]
+
+    if odds is not None:
+
+        odds_text = f"{odds:.2f}"
+
+    else:
+
+        odds_text = "No detectada"
+
+    response = f"""
+📥 SEÑAL REGISTRADA
+
+🆔 #{signal['id']}
+
+⚽ {signal['match']}
+
+🎯 Estrategia:
+{signal['strategy']}
+
+📊 Probabilidad:
+{probability_text}
+
+💰 Cuota:
+{odds_text}
+
+⏳ Estado:
+PENDIENTE
+
+━━━━━━━━━━━━━━━━
+
+Puedes consultar:
+
+/panel
+/estrategias
+/pendientes
+"""
+
+    send_message(
+        chat_id,
+        response
+    )
+
+
+# ============================================================
+# TELEGRAM LONG POLLING
+# ============================================================
+
+def run_bot():
 
     print("")
     print("======================================")
-    print("ANÁLISIS TERMINADO")
+    print("      APUESTASMURCIA BOT")
     print("======================================")
-    print(
-        "Equipos consultados:",
-        len(team_cache)
-    )
-    print(
-        "Alertas enviadas:",
-        alerts
-    )
+    print("Bot iniciado.")
+    print("Esperando señales...")
     print("======================================")
 
+    offset = None
+
+    while True:
+
+        try:
+
+            params = {
+                "timeout": 30
+            }
+
+            if offset is not None:
+
+                params["offset"] = offset
+
+            response = requests.get(
+                f"{TELEGRAM_URL}/getUpdates",
+                params=params,
+                timeout=40
+            )
+
+            data = response.json()
+
+            if not data.get("ok"):
+
+                print(
+                    "Error Telegram:",
+                    data
+                )
+
+                time.sleep(5)
+
+                continue
+
+            for update in data.get(
+                "result",
+                []
+            ):
+
+                offset = (
+                    update["update_id"] + 1
+                )
+
+                if "message" in update:
+
+                    process_message(
+                        update["message"]
+                    )
+
+        except Exception as e:
+
+            print(
+                "Error en polling:",
+                e
+            )
+
+            time.sleep(5)
+
+
+# ============================================================
+# INICIO
+# ============================================================
 
 if __name__ == "__main__":
-    main()
+
+    run_bot()
