@@ -1291,15 +1291,15 @@
     "estrategia": "BTTS",
     "cuota": null,
     "stake": 5000,
-    "resultado": "pendiente",
-    "resultado_manual": false,
+    "resultado": "ganada",
+    "resultado_manual": true,
     "ganancia": 0,
     "fixture_id": null,
     "goles_home": null,
     "goles_away": null,
     "goles_home_ht": null,
     "goles_away_ht": null,
-    "fecha_resultado": null,
+    "fecha_resultado": "2026-08-23 15:41:07",
     "texto_original": "💎  ambos equipos marcan no riesgo medio \n\n🏆Argentina Liga Profesional de Fútbol\n🆚  Racing Club - Boca Juniors\n🗓 lun, 24 ago 2026 00:30\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 9 \n\n📈 Posición en el ranking: 13 - 12\n\n🎯 Resultado deseado: Ambos Equipos Anotan NO\n\n🟢 bet365: 1.66\n\nCuotas:🎯 1X2\n1 3.40  X 2.87  2 2.45\n\n🎯 Número de goles\n+2.5 2.60  -2.5 1.47\n\n🎯 Ambos equipos marcan\nSI 2.10  NO 1.66"
   }
 ]
