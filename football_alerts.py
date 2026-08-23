@@ -1,129 +1,82 @@
 import os
 import time
+import json
 import requests
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
 
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
+FOOTBALL_DATA_API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-BASE_URL = "https://v3.football.api-sports.io"
-
-MIN_PROBABILITY = 70
-LAST_MATCHES = 10
 
 # Apuesta fija
 STAKE = 5000
 
-# Máximo de partidos a analizar por ejecución
-MAX_PARTIDOS = 20
+# Probabilidad mínima
+MIN_PROBABILITY = 70
 
+# Últimos partidos
+LAST_MATCHES = 10
+
+# Máximo de partidos a analizar por ejecución
+MAX_PARTIDOS_ANALIZAR = 30
+
+# Archivos de datos
+DATA_FILE = Path("apuestas.json")
+
+# APIs
+API_FOOTBALL_URL = "https://v3.football.api-sports.io"
+FOOTBALL_DATA_URL = "https://api.football-data.org/v4"
 
 # ============================================================
 # VALIDACIÓN
 # ============================================================
 
-print("====================================")
-print("⚽ FOOTBALL ALERTS")
-print("====================================")
-
 if not API_FOOTBALL_KEY:
     print("❌ API_FOOTBALL_KEY NO CONFIGURADA")
     raise SystemExit(1)
 
-print("🔑 API-Football: CONFIGURADA")
-
-if not TELEGRAM_TOKEN:
-    print("❌ TELEGRAM_BOT_TOKEN NO CONFIGURADO")
+if not FOOTBALL_DATA_API_KEY:
+    print("❌ FOOTBALL_DATA_API_KEY NO CONFIGURADA")
     raise SystemExit(1)
 
+if not TELEGRAM_TOKEN:
+    print("❌ TELEGRAM_BOT_TOKEN NO CONFIGURADA")
+    raise SystemExit(1)
+
+print("====================================")
+print("⚽ FOOTBALL ALERTS")
+print("====================================")
+print("🔑 API-Football: CONFIGURADA")
+print("🔑 Football-Data: CONFIGURADA")
 print("🤖 Telegram: CONFIGURADO")
-
-if CHAT_ID:
-    print("💬 Telegram Chat ID: CONFIGURADO")
-else:
-    print("⚠️ TELEGRAM_CHAT_ID NO CONFIGURADO")
-
+print(f"💰 Apuesta: ${STAKE:,} COP")
 print("====================================")
 
 
 # ============================================================
-# SESIÓN
+# SESIONES
 # ============================================================
 
-session = requests.Session()
+api_session = requests.Session()
 
-session.headers.update({
+api_session.headers.update({
     "x-apisports-key": API_FOOTBALL_KEY,
-    "Accept": "application/json",
     "User-Agent": "FootballAlertsBot/2.0"
 })
 
 
-# ============================================================
-# API FOOTBALL
-# ============================================================
+football_session = requests.Session()
 
-def api_get(endpoint, params=None):
-
-    url = BASE_URL + endpoint
-
-    try:
-
-        response = session.get(
-            url,
-            params=params,
-            timeout=30
-        )
-
-        print(
-            f"API-Football: {endpoint} "
-            f"HTTP {response.status_code}"
-        )
-
-        if response.status_code == 200:
-
-            data = response.json()
-
-            errores = data.get("errors")
-
-            if errores:
-                print(
-                    f"⚠️ API-Football errors: "
-                    f"{errores}"
-                )
-
-            return data
-
-        if response.status_code == 429:
-
-            print(
-                "⚠️ Límite de API-Football alcanzado."
-            )
-
-            print(
-                response.text
-            )
-
-            return None
-
-        print(
-            f"❌ API-Football HTTP "
-            f"{response.status_code}: "
-            f"{response.text}"
-        )
-
-    except requests.exceptions.RequestException as e:
-
-        print(
-            f"❌ Error conexión API-Football: {e}"
-        )
-
-    return None
+football_session.headers.update({
+    "X-Auth-Token": FOOTBALL_DATA_API_KEY,
+    "User-Agent": "FootballAlertsBot/2.0"
+})
 
 
 # ============================================================
@@ -133,163 +86,172 @@ def api_get(endpoint, params=None):
 def enviar_telegram(mensaje):
 
     if not CHAT_ID:
-
-        print(
-            "⚠️ TELEGRAM_CHAT_ID no configurado."
-        )
-
+        print("⚠️ TELEGRAM_CHAT_ID no configurado.")
         print(mensaje)
-
         return False
 
-    url = (
-        f"https://api.telegram.org/"
-        f"bot{TELEGRAM_TOKEN}/sendMessage"
-    )
-
-    data = {
-        "chat_id": CHAT_ID,
-        "text": mensaje,
-        "parse_mode": "HTML"
-    }
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
     try:
 
         response = requests.post(
             url,
-            data=data,
+            data={
+                "chat_id": CHAT_ID,
+                "text": mensaje,
+                "parse_mode": "HTML"
+            },
             timeout=20
         )
 
         if response.status_code == 200:
-
-            print(
-                "📨 Telegram: mensaje enviado"
-            )
-
+            print("📨 Telegram: mensaje enviado")
             return True
 
         print(
-            f"❌ Telegram HTTP "
-            f"{response.status_code}: "
-            f"{response.text}"
+            f"❌ Telegram HTTP {response.status_code}"
         )
+        print(response.text)
 
     except Exception as e:
-
-        print(
-            f"❌ Error Telegram: {e}"
-        )
+        print(f"❌ Error Telegram: {e}")
 
     return False
 
 
 # ============================================================
-# PARTIDOS DE HOY Y MAÑANA
+# API-FOOTBALL
 # ============================================================
 
-def obtener_partidos():
+def api_football_get(endpoint, params=None):
+
+    url = API_FOOTBALL_URL + endpoint
+
+    try:
+
+        response = api_session.get(
+            url,
+            params=params,
+            timeout=30
+        )
+
+        print(
+            f"API-Football {endpoint} "
+            f"HTTP {response.status_code}"
+        )
+
+        if response.status_code == 200:
+            return response.json()
+
+        print(response.text)
+
+    except Exception as e:
+        print(f"❌ Error API-Football: {e}")
+
+    return None
+
+
+# ============================================================
+# FOOTBALL-DATA
+# ============================================================
+
+def football_data_get(endpoint, params=None):
+
+    url = FOOTBALL_DATA_URL + endpoint
+
+    try:
+
+        response = football_session.get(
+            url,
+            params=params,
+            timeout=30
+        )
+
+        print(
+            f"Football-Data {endpoint} "
+            f"HTTP {response.status_code}"
+        )
+
+        if response.status_code == 200:
+            return response.json()
+
+        print(response.text)
+
+    except Exception as e:
+        print(f"❌ Error Football-Data: {e}")
+
+    return None
+
+
+# ============================================================
+# PARTIDOS DE API-FOOTBALL
+# ============================================================
+
+def obtener_partidos_api():
 
     hoy = datetime.now(
         timezone.utc
-    ).date()
+    ).strftime("%Y-%m-%d")
 
-    manana = hoy + timedelta(days=1)
-
-    print("")
-    print(
-        f"📅 Buscando partidos "
-        f"{hoy} y {manana}"
-    )
+    manana = (
+        datetime.now(timezone.utc)
+        + timedelta(days=1)
+    ).strftime("%Y-%m-%d")
 
     partidos = []
 
-    # --------------------------------------------------------
-    # HOY
-    # --------------------------------------------------------
+    for fecha in [hoy, manana]:
 
-    data_hoy = api_get(
-        "/fixtures",
-        {
-            "date": hoy.isoformat(),
-            "timezone": "America/Bogota"
-        }
-    )
+        data = api_football_get(
+            "/fixtures",
+            {
+                "date": fecha,
+                "status": "NS"
+            }
+        )
 
-    if data_hoy:
+        if not data:
+            continue
 
-        partidos.extend(
-            data_hoy.get(
-                "response",
-                []
+        for item in data.get("response", []):
+
+            fixture = item.get(
+                "fixture",
+                {}
             )
-        )
 
-    # --------------------------------------------------------
-    # MAÑANA
-    # --------------------------------------------------------
-
-    data_manana = api_get(
-        "/fixtures",
-        {
-            "date": manana.isoformat(),
-            "timezone": "America/Bogota"
-        }
-    )
-
-    if data_manana:
-
-        partidos.extend(
-            data_manana.get(
-                "response",
-                []
+            teams = item.get(
+                "teams",
+                {}
             )
-        )
 
-    # --------------------------------------------------------
-    # ELIMINAR DUPLICADOS
-    # --------------------------------------------------------
+            partidos.append({
+                "id": fixture.get("id"),
+                "date": fixture.get("date"),
+                "home": teams.get(
+                    "home",
+                    {}
+                ),
+                "away": teams.get(
+                    "away",
+                    {}
+                ),
+                "league": item.get(
+                    "league",
+                    {}
+                )
+            })
 
-    unicos = {}
-
-    for partido in partidos:
-
-        fixture = partido.get(
-            "fixture",
-            {}
-        )
-
-        fixture_id = fixture.get(
-            "id"
-        )
-
-        if fixture_id:
-            unicos[fixture_id] = partido
-
-    resultado = list(
-        unicos.values()
-    )
-
-    print(
-        f"📊 Partidos encontrados: "
-        f"{len(resultado)}"
-    )
-
-    return resultado
+    return partidos
 
 
 # ============================================================
-# ÚLTIMOS 10 PARTIDOS
+# HISTORIAL DE EQUIPO
 # ============================================================
 
-def obtener_ultimos_partidos(team_id):
+def obtener_historial_api(team_id):
 
-    print(
-        f"📈 Últimos {LAST_MATCHES} "
-        f"partidos del equipo {team_id}"
-    )
-
-    data = api_get(
+    data = api_football_get(
         "/fixtures",
         {
             "team": team_id,
@@ -300,302 +262,170 @@ def obtener_ultimos_partidos(team_id):
     if not data:
         return []
 
-    partidos = data.get(
+    return data.get(
         "response",
         []
     )
 
-    return partidos
-
 
 # ============================================================
-# EXTRAER GOLES
+# ESTADÍSTICAS
 # ============================================================
 
-def obtener_goles(partido):
-
-    goals = partido.get(
-        "goals",
-        {}
-    )
-
-    home = goals.get(
-        "home"
-    )
-
-    away = goals.get(
-        "away"
-    )
-
-    if home is None or away is None:
-        return None, None
-
-    return home, away
-
-
-# ============================================================
-# BTTS
-# ============================================================
-
-def calcular_btts(partidos):
+def calcular_estadisticas(partidos, team_id):
 
     if not partidos:
-        return 0
+        return {}
 
-    validos = 0
+    total = len(partidos)
+
     btts = 0
+    over15 = 0
+    over25 = 0
+    over35 = 0
+    under35 = 0
+    empate_ht = 0
+    victoria = 0
+    empate = 0
+    derrota = 0
+
+    goles_favor = 0
+    goles_contra = 0
 
     for partido in partidos:
-
-        home, away = obtener_goles(
-            partido
-        )
-
-        if home is None or away is None:
-            continue
-
-        validos += 1
-
-        if home > 0 and away > 0:
-            btts += 1
-
-    if validos == 0:
-        return 0
-
-    return (
-        btts / validos
-    ) * 100
-
-
-# ============================================================
-# OVER 1.5
-# ============================================================
-
-def calcular_over15(partidos):
-
-    if not partidos:
-        return 0
-
-    validos = 0
-    total = 0
-
-    for partido in partidos:
-
-        home, away = obtener_goles(
-            partido
-        )
-
-        if home is None or away is None:
-            continue
-
-        validos += 1
-
-        if home + away > 1:
-            total += 1
-
-    if validos == 0:
-        return 0
-
-    return (
-        total / validos
-    ) * 100
-
-
-# ============================================================
-# OVER 2.5
-# ============================================================
-
-def calcular_over25(partidos):
-
-    if not partidos:
-        return 0
-
-    validos = 0
-    total = 0
-
-    for partido in partidos:
-
-        home, away = obtener_goles(
-            partido
-        )
-
-        if home is None or away is None:
-            continue
-
-        validos += 1
-
-        if home + away > 2:
-            total += 1
-
-    if validos == 0:
-        return 0
-
-    return (
-        total / validos
-    ) * 100
-
-
-# ============================================================
-# OVER 3.5
-# ============================================================
-
-def calcular_over35(partidos):
-
-    if not partidos:
-        return 0
-
-    validos = 0
-    total = 0
-
-    for partido in partidos:
-
-        home, away = obtener_goles(
-            partido
-        )
-
-        if home is None or away is None:
-            continue
-
-        validos += 1
-
-        if home + away > 3:
-            total += 1
-
-    if validos == 0:
-        return 0
-
-    return (
-        total / validos
-    ) * 100
-
-
-# ============================================================
-# UNDER 3.5
-# ============================================================
-
-def calcular_under35(partidos):
-
-    if not partidos:
-        return 0
-
-    validos = 0
-    total = 0
-
-    for partido in partidos:
-
-        home, away = obtener_goles(
-            partido
-        )
-
-        if home is None or away is None:
-            continue
-
-        validos += 1
-
-        if home + away < 4:
-            total += 1
-
-    if validos == 0:
-        return 0
-
-    return (
-        total / validos
-    ) * 100
-
-
-# ============================================================
-# GANADOR LOCAL
-# ============================================================
-
-def calcular_local_gana(partidos, team_id):
-
-    if not partidos:
-        return 0
-
-    validos = 0
-    ganados = 0
-
-    for partido in partidos:
-
-        home, away = obtener_goles(
-            partido
-        )
-
-        if home is None or away is None:
-            continue
-
-        validos += 1
 
         teams = partido.get(
             "teams",
             {}
         )
 
-        home_team = teams.get(
+        home = teams.get(
             "home",
             {}
         )
 
-        away_team = teams.get(
+        away = teams.get(
             "away",
             {}
         )
 
-        local = (
-            home_team.get("id")
-            == team_id
+        goals = partido.get(
+            "goals",
+            {}
         )
 
-        if local:
+        home_goals = goals.get("home")
+        away_goals = goals.get("away")
 
-            if home > away:
-                ganados += 1
+        if home_goals is None or away_goals is None:
+            continue
+
+        total_goals = (
+            home_goals +
+            away_goals
+        )
+
+        if (
+            home_goals > 0
+            and away_goals > 0
+        ):
+            btts += 1
+
+        if total_goals > 1:
+            over15 += 1
+
+        if total_goals > 2:
+            over25 += 1
+
+        if total_goals > 3:
+            over35 += 1
+
+        if total_goals < 4:
+            under35 += 1
+
+        halftime = partido.get(
+            "score",
+            {}
+        ).get(
+            "halftime",
+            {}
+        )
+
+        ht_home = halftime.get("home")
+        ht_away = halftime.get("away")
+
+        if (
+            ht_home is not None
+            and ht_away is not None
+            and ht_home == ht_away
+        ):
+            empate_ht += 1
+
+        if home.get("id") == team_id:
+
+            goles_favor += home_goals
+            goles_contra += away_goals
+
+            if home_goals > away_goals:
+                victoria += 1
+            elif home_goals == away_goals:
+                empate += 1
+            else:
+                derrota += 1
 
         else:
 
-            if away > home:
-                ganados += 1
+            goles_favor += away_goals
+            goles_contra += home_goals
 
-    if validos == 0:
-        return 0
+            if away_goals > home_goals:
+                victoria += 1
+            elif away_goals == home_goals:
+                empate += 1
+            else:
+                derrota += 1
 
-    return (
-        ganados / validos
-    ) * 100
+    def porcentaje(valor):
 
+        if total == 0:
+            return 0
 
-# ============================================================
-# EMPATE
-# ============================================================
+        return (
+            valor / total
+        ) * 100
 
-def calcular_empate(partidos):
+    return {
 
-    if not partidos:
-        return 0
+        "btts": porcentaje(btts),
 
-    validos = 0
-    empates = 0
+        "over15": porcentaje(over15),
 
-    for partido in partidos:
+        "over25": porcentaje(over25),
 
-        home, away = obtener_goles(
-            partido
-        )
+        "over35": porcentaje(over35),
 
-        if home is None or away is None:
-            continue
+        "under35": porcentaje(under35),
 
-        validos += 1
+        "empate_ht": porcentaje(empate_ht),
 
-        if home == away:
-            empates += 1
+        "victoria": porcentaje(victoria),
 
-    if validos == 0:
-        return 0
+        "empate": porcentaje(empate),
 
-    return (
-        empates / validos
-    ) * 100
+        "derrota": porcentaje(derrota),
+
+        "promedio_gf": (
+            goles_favor / total
+            if total else 0
+        ),
+
+        "promedio_gc": (
+            goles_contra / total
+            if total else 0
+        ),
+
+        "partidos": total
+    }
 
 
 # ============================================================
@@ -604,487 +434,359 @@ def calcular_empate(partidos):
 
 def analizar_partido(partido):
 
-    fixture = partido.get(
-        "fixture",
-        {}
-    )
+    home = partido["home"]
+    away = partido["away"]
 
-    teams = partido.get(
-        "teams",
-        {}
-    )
+    home_id = home.get("id")
+    away_id = away.get("id")
 
-    home_team = teams.get(
-        "home",
-        {}
-    )
-
-    away_team = teams.get(
-        "away",
-        {}
-    )
-
-    fixture_id = fixture.get(
-        "id"
-    )
-
-    home_name = home_team.get(
+    home_name = home.get(
         "name",
         "Local"
     )
 
-    away_name = away_team.get(
+    away_name = away.get(
         "name",
         "Visitante"
     )
 
-    home_id = home_team.get(
-        "id"
-    )
-
-    away_id = away_team.get(
-        "id"
-    )
-
-    if not home_id or not away_id:
-        return None
-
     print("")
     print(
-        f"🔎 Analizando: "
-        f"{home_name} vs {away_name}"
+        f"🔎 {home_name} vs {away_name}"
     )
 
-    # --------------------------------------------------------
-    # ÚLTIMOS 10 LOCAL
-    # --------------------------------------------------------
-
-    home_matches = obtener_ultimos_partidos(
+    home_history = obtener_historial_api(
         home_id
     )
 
     time.sleep(0.5)
 
-    # --------------------------------------------------------
-    # ÚLTIMOS 10 VISITANTE
-    # --------------------------------------------------------
-
-    away_matches = obtener_ultimos_partidos(
+    away_history = obtener_historial_api(
         away_id
     )
 
     if (
-        len(home_matches) < 5
-        or len(away_matches) < 5
+        len(home_history) < 5
+        or len(away_history) < 5
     ):
 
         print(
-            "⚠️ Insuficientes datos."
+            "⚠️ Historial insuficiente"
         )
 
         return None
 
-    # --------------------------------------------------------
-    # ESTADÍSTICAS
-    # --------------------------------------------------------
-
-    btts_home = calcular_btts(
-        home_matches
-    )
-
-    btts_away = calcular_btts(
-        away_matches
-    )
-
-    over15_home = calcular_over15(
-        home_matches
-    )
-
-    over15_away = calcular_over15(
-        away_matches
-    )
-
-    over25_home = calcular_over25(
-        home_matches
-    )
-
-    over25_away = calcular_over25(
-        away_matches
-    )
-
-    over35_home = calcular_over35(
-        home_matches
-    )
-
-    over35_away = calcular_over35(
-        away_matches
-    )
-
-    under35_home = calcular_under35(
-        home_matches
-    )
-
-    under35_away = calcular_under35(
-        away_matches
-    )
-
-    local_home = calcular_local_gana(
-        home_matches,
+    home_stats = calcular_estadisticas(
+        home_history,
         home_id
     )
 
-    local_away = calcular_local_gana(
-        away_matches,
+    away_stats = calcular_estadisticas(
+        away_history,
         away_id
     )
 
-    empate_home = calcular_empate(
-        home_matches
-    )
+    resultado = {
 
-    empate_away = calcular_empate(
-        away_matches
-    )
+        "fixture_id": partido["id"],
 
-    # --------------------------------------------------------
-    # PROMEDIOS
-    # --------------------------------------------------------
-
-    btts = (
-        btts_home +
-        btts_away
-    ) / 2
-
-    over15 = (
-        over15_home +
-        over15_away
-    ) / 2
-
-    over25 = (
-        over25_home +
-        over25_away
-    ) / 2
-
-    over35 = (
-        over35_home +
-        over35_away
-    ) / 2
-
-    under35 = (
-        under35_home +
-        under35_away
-    ) / 2
-
-    empate = (
-        empate_home +
-        empate_away
-    ) / 2
-
-    # --------------------------------------------------------
-    # PREDICCIÓN DE API-FOOTBALL
-    # --------------------------------------------------------
-
-    prediction = api_get(
-        "/predictions",
-        {
-            "fixture": fixture_id
-        }
-    )
-
-    pred_home = None
-    pred_draw = None
-    pred_away = None
-
-    if prediction:
-
-        response = prediction.get(
-            "response",
-            []
-        )
-
-        if response:
-
-            predictions = response[0].get(
-                "predictions",
-                {}
-            )
-
-            percent = predictions.get(
-                "percent",
-                {}
-            )
-
-            pred_home = convertir_porcentaje(
-                percent.get("home")
-            )
-
-            pred_draw = convertir_porcentaje(
-                percent.get("draw")
-            )
-
-            pred_away = convertir_porcentaje(
-                percent.get("away")
-            )
-
-    return {
-        "fixture_id": fixture_id,
         "home": home_name,
+
         "away": away_name,
-        "btts": btts,
-        "over15": over15,
-        "over25": over25,
-        "over35": over35,
-        "under35": under35,
-        "empate": empate,
-        "pred_home": pred_home,
-        "pred_draw": pred_draw,
-        "pred_away": pred_away
+
+        "fecha": partido["date"],
+
+        "liga": partido["league"].get(
+            "name",
+            "Desconocida"
+        ),
+
+        "btts": (
+            home_stats["btts"]
+            + away_stats["btts"]
+        ) / 2,
+
+        "over15": (
+            home_stats["over15"]
+            + away_stats["over15"]
+        ) / 2,
+
+        "over25": (
+            home_stats["over25"]
+            + away_stats["over25"]
+        ) / 2,
+
+        "over35": (
+            home_stats["over35"]
+            + away_stats["over35"]
+        ) / 2,
+
+        "under35": (
+            home_stats["under35"]
+            + away_stats["under35"]
+        ) / 2,
+
+        "empate_ht": (
+            home_stats["empate_ht"]
+            + away_stats["empate_ht"]
+        ) / 2,
+
+        "victoria_local": home_stats["victoria"],
+
+        "victoria_visitante": away_stats["victoria"]
     }
 
-
-# ============================================================
-# CONVERTIR %
-# ============================================================
-
-def convertir_porcentaje(valor):
-
-    if valor is None:
-        return None
-
-    try:
-
-        return float(
-            str(valor)
-            .replace("%", "")
-            .strip()
-        )
-
-    except Exception:
-
-        return None
+    return resultado
 
 
 # ============================================================
 # CREAR SEÑALES
 # ============================================================
 
-def crear_alerta(resultado):
-
-    if not resultado:
-        return None
-
-    home = resultado["home"]
-    away = resultado["away"]
+def crear_señales(resultado):
 
     señales = []
 
-    # --------------------------------------------------------
-    # BTTS
-    # --------------------------------------------------------
-
     if resultado["btts"] >= MIN_PROBABILITY:
 
-        señales.append(
-            (
-                "⚽ BTTS",
-                resultado["btts"]
-            )
-        )
-
-    # --------------------------------------------------------
-    # OVER 1.5
-    # --------------------------------------------------------
+        señales.append({
+            "mercado": "BTTS",
+            "probabilidad": resultado["btts"]
+        })
 
     if resultado["over15"] >= MIN_PROBABILITY:
 
-        señales.append(
-            (
-                "🔥 OVER 1.5",
-                resultado["over15"]
-            )
-        )
-
-    # --------------------------------------------------------
-    # OVER 2.5
-    # --------------------------------------------------------
+        señales.append({
+            "mercado": "OVER 1.5",
+            "probabilidad": resultado["over15"]
+        })
 
     if resultado["over25"] >= MIN_PROBABILITY:
 
-        señales.append(
-            (
-                "🔥 OVER 2.5",
-                resultado["over25"]
-            )
-        )
-
-    # --------------------------------------------------------
-    # OVER 3.5
-    # --------------------------------------------------------
+        señales.append({
+            "mercado": "OVER 2.5",
+            "probabilidad": resultado["over25"]
+        })
 
     if resultado["over35"] >= MIN_PROBABILITY:
 
-        señales.append(
-            (
-                "🔥 OVER 3.5",
-                resultado["over35"]
-            )
-        )
-
-    # --------------------------------------------------------
-    # UNDER 3.5
-    # --------------------------------------------------------
+        señales.append({
+            "mercado": "OVER 3.5",
+            "probabilidad": resultado["over35"]
+        })
 
     if resultado["under35"] >= MIN_PROBABILITY:
 
-        señales.append(
-            (
-                "🧊 UNDER 3.5",
-                resultado["under35"]
-            )
-        )
+        señales.append({
+            "mercado": "UNDER 3.5",
+            "probabilidad": resultado["under35"]
+        })
 
-    # --------------------------------------------------------
-    # EMPATE
-    # --------------------------------------------------------
+    if resultado["empate_ht"] >= MIN_PROBABILITY:
 
-    if resultado["empate"] >= MIN_PROBABILITY:
+        señales.append({
+            "mercado": "EMPATE 1T",
+            "probabilidad": resultado["empate_ht"]
+        })
 
-        señales.append(
-            (
-                "🤝 EMPATE",
-                resultado["empate"]
-            )
-        )
-
-    # --------------------------------------------------------
-    # PREDICCIÓN LOCAL
-    # --------------------------------------------------------
-
-    if (
-        resultado["pred_home"] is not None
-        and resultado["pred_home"] >= MIN_PROBABILITY
-    ):
-
-        señales.append(
-            (
-                f"🏠 GANA {home}",
-                resultado["pred_home"]
-            )
-        )
-
-    # --------------------------------------------------------
-    # PREDICCIÓN EMPATE
-    # --------------------------------------------------------
-
-    if (
-        resultado["pred_draw"] is not None
-        and resultado["pred_draw"] >= MIN_PROBABILITY
-    ):
-
-        señales.append(
-            (
-                "🤝 EMPATE",
-                resultado["pred_draw"]
-            )
-        )
-
-    # --------------------------------------------------------
-    # PREDICCIÓN VISITANTE
-    # --------------------------------------------------------
-
-    if (
-        resultado["pred_away"] is not None
-        and resultado["pred_away"] >= MIN_PROBABILITY
-    ):
-
-        señales.append(
-            (
-                f"✈️ GANA {away}",
-                resultado["pred_away"]
-            )
-        )
-
-    # --------------------------------------------------------
-    # NO HAY SEÑAL
-    # --------------------------------------------------------
-
-    if not señales:
-        return None
-
-    # --------------------------------------------------------
-    # CREAR TEXTO
-    # --------------------------------------------------------
-
-    ahora = datetime.now(
-        timezone.utc
-    )
-
-    fecha = ahora.strftime(
-        "%d/%m/%Y %H:%M"
-    )
-
-    texto = []
-
-    texto.append(
-        "🚨 <b>SEÑAL FOOTBALL ALERTS</b>"
-    )
-
-    texto.append("")
-
-    texto.append(
-        f"⚽ <b>{home}</b> vs "
-        f"<b>{away}</b>"
-    )
-
-    texto.append("")
-
-    texto.append(
-        f"💰 Apuesta: <b>${STAKE:,} COP</b>"
-        .replace(",", ".")
-    )
-
-    texto.append("")
-
-    texto.append(
-        "📊 <b>MERCADOS DETECTADOS</b>"
-    )
-
-    for nombre, probabilidad in señales:
-
-        texto.append(
-            f"{nombre}: "
-            f"<b>{probabilidad:.1f}%</b>"
-        )
-
-    texto.append("")
-
-    texto.append(
-        "📌 Basado en últimos 10 partidos"
-    )
-
-    texto.append(
-        f"🕐 {fecha} UTC"
-    )
-
-    texto.append("")
-
-    texto.append(
-        "⏳ Resultado: "
-        "<b>PENDIENTE</b>"
-    )
-
-    texto.append("")
-
-    texto.append(
-        "⚠️ Señal estadística. "
-        "No garantiza resultado."
-    )
-
-    return "\n".join(texto)
+    return señales
 
 
 # ============================================================
-# MAIN
+# GUARDAR APUESTAS
+# ============================================================
+
+def cargar_apuestas():
+
+    if not DATA_FILE.exists():
+        return []
+
+    try:
+
+        with open(
+            DATA_FILE,
+            "r",
+            encoding="utf-8"
+        ) as archivo:
+
+            return json.load(archivo)
+
+    except Exception:
+        return []
+
+
+def guardar_apuestas(apuestas):
+
+    with open(
+        DATA_FILE,
+        "w",
+        encoding="utf-8"
+    ) as archivo:
+
+        json.dump(
+            apuestas,
+            archivo,
+            ensure_ascii=False,
+            indent=2
+        )
+
+
+# ============================================================
+# REGISTRAR SEÑAL
+# ============================================================
+
+def registrar_apuesta(
+    resultado,
+    señal
+):
+
+    apuestas = cargar_apuestas()
+
+    apuesta = {
+
+        "fixture_id":
+            resultado["fixture_id"],
+
+        "home":
+            resultado["home"],
+
+        "away":
+            resultado["away"],
+
+        "liga":
+            resultado["liga"],
+
+        "fecha":
+            resultado["fecha"],
+
+        "mercado":
+            señal["mercado"],
+
+        "probabilidad":
+            round(
+                señal["probabilidad"],
+                2
+            ),
+
+        "stake":
+            STAKE,
+
+        "estado":
+            "PENDIENTE",
+
+        "ganancia":
+            0,
+
+        "creada":
+            datetime.now(
+                timezone.utc
+            ).isoformat()
+    }
+
+    # Evitar duplicados
+    for existente in apuestas:
+
+        if (
+            existente["fixture_id"]
+            == apuesta["fixture_id"]
+            and
+            existente["mercado"]
+            == apuesta["mercado"]
+        ):
+            return
+
+    apuestas.append(apuesta)
+
+    guardar_apuestas(apuestas)
+
+
+# ============================================================
+# CREAR MENSAJE
+# ============================================================
+
+def crear_mensaje(
+    resultado,
+    señales
+):
+
+    mensaje = (
+        "🚨 <b>NUEVA SEÑAL</b>\n\n"
+        f"⚽ <b>{resultado['home']}</b> "
+        f"vs "
+        f"<b>{resultado['away']}</b>\n\n"
+        f"🏆 {resultado['liga']}\n\n"
+    )
+
+    for señal in señales:
+
+        mensaje += (
+            f"🎯 <b>{señal['mercado']}</b>\n"
+            f"📊 Probabilidad: "
+            f"<b>{señal['probabilidad']:.1f}%</b>\n"
+            f"💰 Apuesta: "
+            f"<b>${STAKE:,} COP</b>\n\n"
+        )
+
+    mensaje += (
+        "📈 Análisis: últimos "
+        f"{LAST_MATCHES} partidos\n"
+        "⏳ Estado: PENDIENTE\n\n"
+        "⚠️ Resultado se comprobará "
+        "cuando termine el partido."
+    )
+
+    return mensaje
+
+
+# ============================================================
+# ESTADÍSTICAS
+# ============================================================
+
+def mostrar_estadisticas():
+
+    apuestas = cargar_apuestas()
+
+    ganadas = [
+        a for a in apuestas
+        if a["estado"] == "GANADA"
+    ]
+
+    perdidas = [
+        a for a in apuestas
+        if a["estado"] == "PERDIDA"
+    ]
+
+    pendientes = [
+        a for a in apuestas
+        if a["estado"] == "PENDIENTE"
+    ]
+
+    ganancia_total = sum(
+        a.get("ganancia", 0)
+        for a in apuestas
+    )
+
+    print("")
+    print("====================================")
+    print("📊 ESTADÍSTICAS")
+    print("====================================")
+    print(
+        f"✅ Ganadas: {len(ganadas)}"
+    )
+    print(
+        f"❌ Perdidas: {len(perdidas)}"
+    )
+    print(
+        f"⏳ Pendientes: {len(pendientes)}"
+    )
+    print(
+        f"💰 Balance: ${ganancia_total:,} COP"
+    )
+    print("====================================")
+
+
+# ============================================================
+# EJECUCIÓN PRINCIPAL
 # ============================================================
 
 def main():
@@ -1096,7 +798,12 @@ def main():
     print("🚀 INICIANDO ANÁLISIS")
     print("====================================")
 
-    partidos = obtener_partidos()
+    partidos = obtener_partidos_api()
+
+    print(
+        f"📊 Partidos encontrados: "
+        f"{len(partidos)}"
+    )
 
     if not partidos:
 
@@ -1106,97 +813,84 @@ def main():
 
         return
 
-    # --------------------------------------------------------
-    # FILTRAR PARTIDOS
-    # --------------------------------------------------------
-
     partidos = partidos[
-        :MAX_PARTIDOS
+        :MAX_PARTIDOS_ANALIZAR
     ]
 
-    print(
-        f"🎯 Analizando "
-        f"{len(partidos)} partidos."
-    )
-
-    actualizaciones = 0
-
-    procesados = set()
-
-    # --------------------------------------------------------
-    # ANALIZAR
-    # --------------------------------------------------------
+    señales_enviadas = 0
 
     for partido in partidos:
 
-        fixture_id = partido.get(
-            "fixture",
-            {}
-        ).get(
-            "id"
-        )
+        try:
 
-        if fixture_id in procesados:
-            continue
+            resultado = analizar_partido(
+                partido
+            )
 
-        procesados.add(
-            fixture_id
-        )
+            if not resultado:
+                continue
 
-        resultado = analizar_partido(
-            partido
-        )
-
-        if resultado:
-
-            alerta = crear_alerta(
+            señales = crear_señales(
                 resultado
             )
 
-            if alerta:
+            if not señales:
 
                 print(
-                    "🚨 SEÑAL ENCONTRADA"
+                    "ℹ️ Sin señales >70%"
                 )
 
-                enviar_telegram(
-                    alerta
+                continue
+
+            print(
+                f"🚨 {len(señales)} "
+                f"señales encontradas"
+            )
+
+            for señal in señales:
+
+                registrar_apuesta(
+                    resultado,
+                    señal
                 )
 
-                actualizaciones += 1
+            mensaje = crear_mensaje(
+                resultado,
+                señales
+            )
 
-            else:
+            if enviar_telegram(
+                mensaje
+            ):
+                señales_enviadas += 1
 
-                print(
-                    "ℹ️ Sin señal >= 70%"
-                )
+            time.sleep(1)
 
-        # Pequeña pausa
-        time.sleep(1)
+        except Exception as e:
 
-    # --------------------------------------------------------
-    # FINAL
-    # --------------------------------------------------------
+            print(
+                f"❌ Error analizando partido: "
+                f"{e}"
+            )
+
+    mostrar_estadisticas()
 
     tiempo = (
-        time.time() -
-        inicio
+        time.time() - inicio
     )
 
     print("")
     print("====================================")
     print(
         f"📨 Señales enviadas: "
-        f"{actualizaciones}"
+        f"{señales_enviadas}"
     )
     print(
         f"⏱️ Tiempo: "
         f"{tiempo:.1f} segundos"
     )
     print("====================================")
-    print(
-        "✅ Ejecución terminada."
-    )
+    print("✅ EJECUCIÓN TERMINADA")
     print("====================================")
 
 
