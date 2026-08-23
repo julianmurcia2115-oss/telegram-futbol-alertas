@@ -1,9 +1,14 @@
-name: Football Alerts
+name: Football Alerts Bot
 
 on:
   workflow_dispatch:
+
   schedule:
-    - cron: "0 */2 * * *"
+    # Ejecuta el bot cada 5 minutos
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write
 
 jobs:
   football-alerts:
@@ -14,6 +19,8 @@ jobs:
 
       - name: Descargar código
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configurar Python
         uses: actions/setup-python@v5
@@ -25,11 +32,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Ejecutar Football Alerts
+      - name: Ejecutar bot
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python football_alerts.py
+
+      - name: Guardar base de datos
+        run: |
+          git config user.name "Football Alerts Bot"
+          git config user.email "football-alerts-bot@users.noreply.github.com"
+
+          git add data/apuestas.json
+
+          git diff --cached --quiet || git commit -m "Actualizar apuestas"
+
+          git push
