@@ -10,12 +10,7 @@ from zoneinfo import ZoneInfo
 # =========================================================
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-
-# NUEVA API
-FOOTBALL_DATA_API_KEY = os.environ.get(
-    "FOOTBALL_DATA_API_KEY",
-    ""
-)
+FOOTBALL_DATA_API_KEY = os.environ.get("FOOTBALL_DATA_API_KEY", "")
 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
@@ -42,9 +37,7 @@ def colombia_date():
 
 
 def colombia_datetime():
-    return colombia_now().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    return colombia_now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 # =========================================================
@@ -64,16 +57,11 @@ def telegram_request(method, data=None):
         result = response.json()
 
         print(
-            f"Telegram {method}: "
-            f"{result.get('ok')}"
+            f"Telegram {method}: {result.get('ok')}"
         )
 
         if not result.get("ok"):
-
-            print(
-                "Telegram:",
-                result
-            )
+            print("Telegram:", result)
 
         return result
 
@@ -90,11 +78,7 @@ def telegram_request(method, data=None):
         }
 
 
-def send_message(
-    chat_id,
-    text,
-    keyboard=None
-):
+def send_message(chat_id, text, keyboard=None):
 
     data = {
         "chat_id": chat_id,
@@ -161,7 +145,6 @@ def answer_callback(callback_id):
 def load_signals():
 
     if not os.path.exists(SIGNALS_FILE):
-
         return []
 
     try:
@@ -175,7 +158,6 @@ def load_signals():
             data = json.load(file)
 
         if isinstance(data, list):
-
             return data
 
     except Exception as e:
@@ -224,7 +206,6 @@ def save_signals(signals):
 def load_offset():
 
     if not os.path.exists(OFFSET_FILE):
-
         return None
 
     try:
@@ -379,7 +360,7 @@ def calendar_keyboard():
 
 
 # =========================================================
-# EXTRACCIÓN DE DATOS
+# EXTRACCIÓN
 # =========================================================
 
 def extract(
@@ -389,7 +370,6 @@ def extract(
 ):
 
     if isinstance(patterns, str):
-
         patterns = [patterns]
 
     for pattern in patterns:
@@ -419,7 +399,6 @@ def extract_strategy(text):
     )
 
     if result:
-
         return result
 
     lower = text.lower()
@@ -431,36 +410,30 @@ def extract_strategy(text):
             or "1er tiempo" in lower
         )
     ):
-
         return "Empate Primer Tiempo"
 
     if (
         "más de 3.5" in lower
         or "over 3.5" in lower
     ):
-
         return "Más de 3.5 goles"
 
     if (
         "más de 2.5" in lower
         or "over 2.5" in lower
     ):
-
         return "Más de 2.5 goles"
 
     if (
         "ambos marcan" in lower
         or "btts" in lower
     ):
-
         return "Ambos Marcan"
 
     if "victoria local" in lower:
-
         return "Victoria Local"
 
     if "victoria visitante" in lower:
-
         return "Victoria Visitante"
 
     return "SIN ESTRATEGIA"
@@ -478,7 +451,6 @@ def extract_odds(text):
     )
 
     if not value:
-
         return None
 
     try:
@@ -504,17 +476,12 @@ def extract_signal_date(text):
     )
 
     if not value:
-
         return None
 
     patterns = [
-
         r"(\d{4})-(\d{2})-(\d{2})",
-
         r"(\d{2})/(\d{2})/(\d{4})",
-
         r"(\d{2})-(\d{2})-(\d{4})"
-
     ]
 
     for pattern in patterns:
@@ -525,7 +492,6 @@ def extract_signal_date(text):
         )
 
         if not match:
-
             continue
 
         groups = match.groups()
@@ -547,7 +513,6 @@ def extract_signal_date(text):
             )
 
         except Exception:
-
             pass
 
     lower = value.lower()
@@ -573,11 +538,9 @@ def extract_signal_date(text):
 def is_bet_alert(text):
 
     if not text:
-
         return False
 
     if text.startswith("/"):
-
         return False
 
     lower = text.lower()
@@ -612,7 +575,6 @@ def is_bet_alert(text):
     for keyword in keywords:
 
         if keyword.lower() in lower:
-
             matches += 1
 
     return matches >= 2
@@ -625,7 +587,6 @@ def is_bet_alert(text):
 def next_signal_id(signals):
 
     if not signals:
-
         return 1
 
     ids = []
@@ -644,11 +605,9 @@ def next_signal_id(signals):
             )
 
         except Exception:
-
             pass
 
     if not ids:
-
         return 1
 
     return max(ids) + 1
@@ -669,7 +628,6 @@ def signal_already_exists(
         ).strip()
 
         if old_text == clean_text:
-
             return True
 
     return False
@@ -777,8 +735,7 @@ def football_data_request(
     if not FOOTBALL_DATA_API_KEY:
 
         print(
-            "❌ FOOTBALL_DATA_API_KEY "
-            "no configurada"
+            "❌ FOOTBALL_DATA_API_KEY no configurada"
         )
 
         return None
@@ -803,15 +760,29 @@ def football_data_request(
             response.status_code
         )
 
-        try:
-
-            data = response.json()
-
-        except Exception:
+        if response.status_code == 401:
 
             print(
-                "❌ Respuesta no JSON:",
-                response.text[:500]
+                "❌ TOKEN INVALIDO: "
+                "FOOTBALL_DATA_API_KEY"
+            )
+
+            return None
+
+        if response.status_code == 403:
+
+            print(
+                "❌ ACCESO DENEGADO "
+                "por Football-Data.org"
+            )
+
+            return None
+
+        if response.status_code == 429:
+
+            print(
+                "⚠️ LIMITE DE PETICIONES "
+                "ALCANZADO"
             )
 
             return None
@@ -820,12 +791,12 @@ def football_data_request(
 
             print(
                 "❌ Error Football-data:",
-                data
+                response.text[:500]
             )
 
             return None
 
-        return data
+        return response.json()
 
     except Exception as e:
 
@@ -838,34 +809,26 @@ def football_data_request(
 
 
 # =========================================================
-# NORMALIZAR NOMBRES
+# NORMALIZAR EQUIPOS
 # =========================================================
 
 def normalize_team_name(name):
 
     if not name:
-
         return ""
 
-    name = name.lower().strip()
+    name = name.lower()
 
     replacements = {
-
         "fc ": "",
         " fc": "",
-        " cf": "",
         "cf ": "",
+        " cf": "",
         "afc ": "",
-        " sc": "",
         "sc ": "",
         "cd ": "",
-        " cd": "",
         "ud ": "",
-        " ud": "",
-        "club ": "",
-        "fk ": "",
-        " fk": ""
-
+        "club ": ""
     }
 
     for old, new in replacements.items():
@@ -890,68 +853,20 @@ def normalize_team_name(name):
     return name
 
 
-def team_names_match(
-    name1,
-    name2
-):
-
-    a = normalize_team_name(
-        name1
-    )
-
-    b = normalize_team_name(
-        name2
-    )
-
-    if not a or not b:
-
-        return False
-
-    if a == b:
-
-        return True
-
-    if a in b or b in a:
-
-        return True
-
-    # Comparar palabras importantes
-    words_a = set(a.split())
-    words_b = set(b.split())
-
-    common = words_a.intersection(
-        words_b
-    )
-
-    if len(common) >= 2:
-
-        return True
-
-    return False
-
-
 def split_match_name(match_text):
 
     if not match_text:
-
         return None, None
 
     text = match_text.strip()
 
     separators = [
-
         r"\s+vs\.?\s+",
-
         r"\s+v\.?\s+",
-
         r"\s+-\s+",
-
         r"\s+–\s+",
-
         r"\s+—\s+",
-
         r"\s+🆚\s+"
-
     ]
 
     for separator in separators:
@@ -974,7 +889,7 @@ def split_match_name(match_text):
 
 
 # =========================================================
-# BUSCAR FIXTURE
+# BUSCAR PARTIDO EN FOOTBALL-DATA
 # =========================================================
 
 def find_fixture_for_signal(signal):
@@ -1005,6 +920,14 @@ def find_fixture_for_signal(signal):
 
         return None
 
+    home_name = normalize_team_name(
+        home_name
+    )
+
+    away_name = normalize_team_name(
+        away_name
+    )
+
     api_date = signal.get(
         "api_date"
     )
@@ -1013,20 +936,37 @@ def find_fixture_for_signal(signal):
 
         api_date = colombia_date()
 
+    # Buscar desde el día anterior hasta el día siguiente
+    # para evitar problemas de zona horaria.
+
+    date_obj = datetime.strptime(
+        api_date,
+        "%Y-%m-%d"
+    )
+
+    date_from = (
+        date_obj - timedelta(days=1)
+    ).strftime("%Y-%m-%d")
+
+    date_to = (
+        date_obj + timedelta(days=1)
+    ).strftime("%Y-%m-%d")
+
     print(
         "🔎 Buscando:",
         home_name,
         "vs",
         away_name,
-        "| Fecha:",
-        api_date
+        date_from,
+        "a",
+        date_to
     )
 
     data = football_data_request(
         "matches",
         {
-            "dateFrom": api_date,
-            "dateTo": api_date
+            "dateFrom": date_from,
+            "dateTo": date_to
         }
     )
 
@@ -1044,100 +984,100 @@ def find_fixture_for_signal(signal):
         len(matches)
     )
 
-    # -----------------------------------------------------
-    # PRIMERA BÚSQUEDA: EXACTA
-    # -----------------------------------------------------
+    best_match = None
 
     for match in matches:
 
         home = match.get(
             "homeTeam",
             {}
-        ).get(
-            "name",
-            ""
         )
 
         away = match.get(
             "awayTeam",
             {}
-        ).get(
-            "name",
-            ""
         )
 
-        if (
-            team_names_match(
-                home,
-                home_name
+        home_candidates = [
+
+            home.get("name", ""),
+            home.get("shortName", ""),
+            home.get("tla", "")
+
+        ]
+
+        away_candidates = [
+
+            away.get("name", ""),
+            away.get("shortName", ""),
+            away.get("tla", "")
+
+        ]
+
+        home_candidates = [
+
+            normalize_team_name(x)
+
+            for x in home_candidates
+            if x
+
+        ]
+
+        away_candidates = [
+
+            normalize_team_name(x)
+
+            for x in away_candidates
+            if x
+
+        ]
+
+        home_match = (
+            home_name in home_candidates
+            or
+            any(
+                home_name in x
+                or x in home_name
+                for x in home_candidates
             )
-            and
-            team_names_match(
-                away,
-                away_name
-            )
-        ):
-
-            match_id = match.get(
-                "id"
-            )
-
-            print(
-                "✅ PARTIDO ENCONTRADO:",
-                match_id,
-                home,
-                "vs",
-                away
-            )
-
-            return match
-
-    # -----------------------------------------------------
-    # SEGUNDA BÚSQUEDA: INVERSIÓN
-    # -----------------------------------------------------
-
-    for match in matches:
-
-        home = match.get(
-            "homeTeam",
-            {}
-        ).get(
-            "name",
-            ""
         )
 
-        away = match.get(
-            "awayTeam",
-            {}
-        ).get(
-            "name",
-            ""
+        away_match = (
+            away_name in away_candidates
+            or
+            any(
+                away_name in x
+                or x in away_name
+                for x in away_candidates
+            )
         )
 
-        if (
-            team_names_match(
-                home,
-                away_name
-            )
-            and
-            team_names_match(
-                away,
-                home_name
-            )
-        ):
+        if home_match and away_match:
 
-            print(
-                "⚠️ Coincidencia invertida:",
-                match.get("id")
-            )
+            best_match = match
+            break
 
-            return match
+    if best_match:
+
+        print(
+            "✅ PARTIDO ENCONTRADO:",
+            best_match.get("id"),
+            best_match.get(
+                "homeTeam",
+                {}
+            ).get("name"),
+            "vs",
+            best_match.get(
+                "awayTeam",
+                {}
+            ).get("name")
+        )
+
+        return best_match
 
     print(
-        "⚠️ Fixture no encontrado:",
-        match_text,
-        "|",
-        api_date
+        "⚠️ Partido no encontrado:",
+        match_text
     )
 
     return None
@@ -1183,52 +1123,59 @@ def update_pending_results():
 
         try:
 
-            # -------------------------------------------------
-            # BUSCAR PARTIDO
-            # -------------------------------------------------
+            # =============================================
+            # BUSCAR ID DEL PARTIDO
+            # =============================================
 
-            match_id = signal.get(
+            fixture_id = signal.get(
                 "fixture_id"
             )
 
-            if not match_id:
+            if not fixture_id:
 
-                match = find_fixture_for_signal(
+                fixture = find_fixture_for_signal(
                     signal
                 )
 
-                if not match:
-
+                if not fixture:
                     continue
 
-                match_id = match.get(
+                fixture_id = fixture.get(
                     "id"
                 )
 
-                if not match_id:
-
+                if not fixture_id:
                     continue
 
-                signal["fixture_id"] = match_id
+                signal["fixture_id"] = fixture_id
 
                 changed = True
 
-            # -------------------------------------------------
-            # CONSULTAR PARTIDO POR ID
-            # -------------------------------------------------
+            # =============================================
+            # CONSULTAR PARTIDO
+            # =============================================
 
             data = football_data_request(
-                f"matches/{match_id}"
+                f"matches/{fixture_id}"
             )
 
             if not data:
-
                 continue
 
-            match = data
+            # Football-Data devuelve el partido
+            # directamente.
 
-            status_info = match.get(
+            match = data.get(
+                "match",
+                data
+            )
+
+            status = match.get(
                 "status"
+            )
+
+            minute = match.get(
+                "minute"
             )
 
             score = match.get(
@@ -1236,87 +1183,65 @@ def update_pending_results():
                 {}
             )
 
-            # -------------------------------------------------
-            # ESTADO
-            # -------------------------------------------------
-
-            status = str(
-                status_info or ""
-            ).upper()
-
-            # -------------------------------------------------
-            # MARCADORES
-            # -------------------------------------------------
-
-            fulltime = score.get(
+            full_time = score.get(
                 "fullTime",
                 {}
             )
 
-            halftime = score.get(
+            half_time = score.get(
                 "halfTime",
                 {}
             )
 
-            current_home = fulltime.get(
+            current_home = full_time.get(
                 "home"
             )
 
-            current_away = fulltime.get(
+            current_away = full_time.get(
                 "away"
             )
 
-            ht_home = halftime.get(
+            ht_home = half_time.get(
                 "home"
             )
 
-            ht_away = halftime.get(
+            ht_away = half_time.get(
                 "away"
             )
 
-            # -------------------------------------------------
-            # GUARDAR MARCADOR
-            # -------------------------------------------------
+            print(
+                f"⚽ #{fixture_id} | "
+                f"{current_home}-{current_away} | "
+                f"{status} | "
+                f"{minute}"
+            )
+
+            # =============================================
+            # GUARDAR INFORMACIÓN EN VIVO
+            # =============================================
 
             signal["live_status"] = status
 
-            signal["live_home_goals"] = (
-                current_home
-            )
+            signal["live_minute"] = minute
 
-            signal["live_away_goals"] = (
-                current_away
-            )
+            signal["live_home_goals"] = current_home
 
-            signal["halftime_home"] = (
-                ht_home
-            )
+            signal["live_away_goals"] = current_away
 
-            signal["halftime_away"] = (
-                ht_away
-            )
+            signal["halftime_home"] = ht_home
 
-            signal["last_api_update"] = (
-                colombia_datetime()
-            )
+            signal["halftime_away"] = ht_away
 
             changed = True
 
-            print(
-                f"⚽ #{match_id} | "
-                f"{current_home}-{current_away} | "
-                f"{status}"
-            )
-
-            # -------------------------------------------------
+            # =============================================
             # PARTIDO EN VIVO
-            # -------------------------------------------------
+            # =============================================
 
             live_statuses = [
-
+                "LIVE",
                 "IN_PLAY",
                 "PAUSED"
-
             ]
 
             if status in live_statuses:
@@ -1329,36 +1254,27 @@ def update_pending_results():
 
                 continue
 
-            # -------------------------------------------------
-            # PARTIDO NO TERMINADO
-            # -------------------------------------------------
+            # =============================================
+            # PARTIDO TERMINADO
+            # =============================================
 
-            if status != "FINISHED":
+            finished_statuses = [
+                "FINISHED"
+            ]
 
-                print(
-                    "⏳ Estado:",
-                    status,
-                    "|",
-                    signal.get("match")
-                )
+            if status not in finished_statuses:
 
                 continue
 
-            # -------------------------------------------------
-            # VERIFICAR MARCADOR FINAL
-            # -------------------------------------------------
-
-            final_home = current_home
-            final_away = current_away
-
             if (
-                final_home is None
-                or final_away is None
+                current_home is None
+                or
+                current_away is None
             ):
 
                 print(
-                    "⚠️ Partido terminado "
-                    "pero sin marcador."
+                    "⚠️ Partido terminado pero "
+                    "sin marcador."
                 )
 
                 continue
@@ -1370,52 +1286,55 @@ def update_pending_results():
 
             won = None
 
-            # =================================================
+            # =============================================
             # AMBOS MARCAN
-            # =================================================
+            # =============================================
 
             if (
                 "ambos marcan" in strategy
-                or "btts" in strategy
+                or
+                "btts" in strategy
             ):
 
                 won = (
-                    final_home >= 1
+                    current_home >= 1
                     and
-                    final_away >= 1
+                    current_away >= 1
                 )
 
-            # =================================================
+            # =============================================
             # OVER 2.5
-            # =================================================
+            # =============================================
 
             elif (
                 "más de 2.5" in strategy
-                or "over 2.5" in strategy
+                or
+                "over 2.5" in strategy
             ):
 
                 won = (
-                    final_home +
-                    final_away
+                    current_home +
+                    current_away
                 ) >= 3
 
-            # =================================================
+            # =============================================
             # OVER 3.5
-            # =================================================
+            # =============================================
 
             elif (
                 "más de 3.5" in strategy
-                or "over 3.5" in strategy
+                or
+                "over 3.5" in strategy
             ):
 
                 won = (
-                    final_home +
-                    final_away
+                    current_home +
+                    current_away
                 ) >= 4
 
-            # =================================================
+            # =============================================
             # EMPATE PRIMER TIEMPO
-            # =================================================
+            # =============================================
 
             elif (
                 "empate primer tiempo"
@@ -1435,31 +1354,31 @@ def update_pending_results():
                         ht_home == ht_away
                     )
 
-            # =================================================
+            # =============================================
             # VICTORIA LOCAL
-            # =================================================
+            # =============================================
 
             elif "victoria local" in strategy:
 
                 won = (
-                    final_home >
-                    final_away
+                    current_home >
+                    current_away
                 )
 
-            # =================================================
+            # =============================================
             # VICTORIA VISITANTE
-            # =================================================
+            # =============================================
 
             elif "victoria visitante" in strategy:
 
                 won = (
-                    final_away >
-                    final_home
+                    current_away >
+                    current_home
                 )
 
-            # =================================================
+            # =============================================
             # ESTRATEGIA DESCONOCIDA
-            # =================================================
+            # =============================================
 
             else:
 
@@ -1479,28 +1398,27 @@ def update_pending_results():
 
                 continue
 
-            # =================================================
+            # =============================================
             # GUARDAR RESULTADO
-            # =================================================
+            # =============================================
 
-            if won:
-
-                signal["result"] = "GANADA"
-
-            else:
-
-                signal["result"] = "PERDIDA"
+            signal["result"] = (
+                "GANADA"
+                if won
+                else
+                "PERDIDA"
+            )
 
             signal["result_at"] = (
                 colombia_datetime()
             )
 
             signal["final_home_goals"] = (
-                final_home
+                current_home
             )
 
             signal["final_away_goals"] = (
-                final_away
+                current_away
             )
 
             changed = True
@@ -1511,7 +1429,7 @@ def update_pending_results():
                 "|",
                 signal.get("match"),
                 "|",
-                f"{final_home}-{final_away}"
+                f"{current_home}-{current_away}"
             )
 
         except Exception as e:
@@ -1519,13 +1437,12 @@ def update_pending_results():
             print(
                 "❌ Error actualizando:",
                 signal.get("match"),
-                "|",
                 e
             )
 
-    # =====================================================
-    # GUARDAR
-    # =====================================================
+    # =============================================
+    # GUARDAR TODO
+    # =============================================
 
     if changed:
 
@@ -1602,9 +1519,7 @@ def calculate_stats(signals):
         won / finished * 100
 
         if finished
-
         else 0
-
     )
 
     total_staked = (
@@ -1614,35 +1529,21 @@ def calculate_stats(signals):
 
     roi = (
 
-        profit /
-        total_staked *
-        100
+        profit / total_staked * 100
 
         if total_staked
-
         else 0
-
     )
 
     return {
 
         "total": len(signals),
-
         "won": won,
-
         "lost": lost,
-
         "pending": pending,
-
-        "effectiveness":
-            effectiveness,
-
-        "profit":
-            profit,
-
-        "roi":
-            roi
-
+        "effectiveness": effectiveness,
+        "profit": profit,
+        "roi": roi
     }
 
 
@@ -1767,8 +1668,7 @@ def estrategias():
     if not groups:
 
         return (
-            "🎯 No hay estrategias "
-            "registradas."
+            "🎯 No hay estrategias registradas."
         )
 
     text = """
@@ -1818,9 +1718,7 @@ def pendientes():
 
     pending = [
 
-        s
-
-        for s in signals
+        s for s in signals
 
         if s.get(
             "result",
@@ -1833,8 +1731,7 @@ def pendientes():
 
         return (
             "⏳ PENDIENTES\n\n"
-            "🟢 No tienes señales "
-            "pendientes."
+            "🟢 No tienes señales pendientes."
         )
 
     text = """
@@ -1858,19 +1755,16 @@ def pendientes():
             )
 
             else "N/D"
-
         )
 
         live_score = ""
 
         if (
-            signal.get(
-                "live_home_goals"
-            ) is not None
+            signal.get("live_home_goals")
+            is not None
             and
-            signal.get(
-                "live_away_goals"
-            ) is not None
+            signal.get("live_away_goals")
+            is not None
         ):
 
             live_score = (
@@ -1890,6 +1784,9 @@ def pendientes():
 🎯 {signal.get('strategy')}
 
 💰 Cuota: {odds_text}
+
+📡 Estado:
+{signal.get('live_status', 'PENDIENTE')}
 {live_score}
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -1960,12 +1857,12 @@ def calendario(period="todo"):
         )
 
         if not date_value:
-
             continue
 
         if (
             start is None
-            or date_value >= start
+            or
+            date_value >= start
         ):
 
             selected.append(
@@ -2107,9 +2004,7 @@ def estadisticas():
         sum(odds) / len(odds)
 
         if odds
-
         else 0
-
     )
 
     return f"""
@@ -2151,15 +2046,9 @@ ${stats['profit']:,.0f} COP
 def configuracion():
 
     api = (
-
         "🟢 CONFIGURADA"
-
         if FOOTBALL_DATA_API_KEY
-
-        else
-
-        "🔴 NO CONFIGURADA"
-
+        else "🔴 NO CONFIGURADA"
     )
 
     return f"""
@@ -2175,14 +2064,11 @@ ${BET_AMOUNT:,.0f} COP
 📥 Señales
 Telegram / BetMines
 
-⚽ API de resultados
-Football-data.org
-
-🔑 API Key
+⚽ Football-Data.org
 {api}
 
-🔄 Ejecución
-Cada 5 minutos
+🔄 Actualización
+Cada ejecución del bot
 
 💾 Registro
 signals.json
@@ -2200,9 +2086,7 @@ telegram_offset.json
 
 def process_callback(callback):
 
-    callback_id = callback.get(
-        "id"
-    )
+    callback_id = callback.get("id")
 
     data = callback.get(
         "data",
@@ -2214,18 +2098,11 @@ def process_callback(callback):
     )
 
     if not message:
-
         return
 
-    chat_id = message[
-        "chat"
-    ][
-        "id"
-    ]
+    chat_id = message["chat"]["id"]
 
-    message_id = message[
-        "message_id"
-    ]
+    message_id = message["message_id"]
 
     answer_callback(
         callback_id
@@ -2376,9 +2253,7 @@ def process_message(message):
         {}
     )
 
-    chat_id = chat.get(
-        "id"
-    )
+    chat_id = chat.get("id")
 
     text = message.get(
         "text",
@@ -2386,11 +2261,9 @@ def process_message(message):
     ).strip()
 
     if not chat_id:
-
         return
 
     if not text:
-
         return
 
     print(
@@ -2474,7 +2347,6 @@ def process_message(message):
     )
 
     if signal is None:
-
         return
 
     odds = signal.get(
@@ -2491,7 +2363,6 @@ def process_message(message):
         )
 
         else "N/D"
-
     )
 
     send_message(
@@ -2593,11 +2464,7 @@ def main():
     )
 
     print(
-        "       PANEL + RESULTADOS"
-    )
-
-    print(
-        "       FOOTBALL-DATA.ORG"
+        "       RESULTADOS AUTOMÁTICOS"
     )
 
     print(
@@ -2609,26 +2476,25 @@ def main():
         colombia_datetime()
     )
 
-    # -----------------------------------------------------
+    # =============================================
     # COMPROBAR API
-    # -----------------------------------------------------
+    # =============================================
 
     if FOOTBALL_DATA_API_KEY:
 
         print(
-            "🔑 FOOTBALL_DATA_API_KEY: OK"
+            "🔑 FOOTBALL_DATA_API_KEY: CONFIGURADA"
         )
 
     else:
 
         print(
-            "❌ FOOTBALL_DATA_API_KEY: "
-            "NO CONFIGURADA"
+            "❌ FOOTBALL_DATA_API_KEY: FALTA"
         )
 
-    # -----------------------------------------------------
+    # =============================================
     # ACTUALIZAR RESULTADOS
-    # -----------------------------------------------------
+    # =============================================
 
     print(
         "⚽ ACTUALIZANDO RESULTADOS..."
@@ -2636,9 +2502,9 @@ def main():
 
     update_pending_results()
 
-    # -----------------------------------------------------
+    # =============================================
     # TELEGRAM
-    # -----------------------------------------------------
+    # =============================================
 
     offset = load_offset()
 
@@ -2680,9 +2546,7 @@ def main():
                 )
 
                 process_callback(
-                    update[
-                        "callback_query"
-                    ]
+                    update["callback_query"]
                 )
 
         except Exception as e:
@@ -2710,10 +2574,5 @@ def main():
         "====================================")
 
 
-# =========================================================
-# EJECUTAR
-# =========================================================
-
 if __name__ == "__main__":
-
     main()
