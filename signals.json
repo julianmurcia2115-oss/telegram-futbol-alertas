@@ -927,5 +927,35 @@
     "result_at": null,
     "fixture_id": null,
     "raw_message": "💎  mas de 3,5 goles \n\n🏆Bolivia Liga De Futbol Prof\n🆚  Real Oruro - Club Bolívar\n🗓 dom, 23 ago 2026 19:00\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 27 \n\n📈 Posición en el ranking: 12 - 2\n\n🎯 Resultado deseado: Más de 3.5 goles\n\n🟢 bet365: 1.72\n\nCuotas:🎯 1X2\n1 6.50  X 5.25  2 1.36\n\n🎯 Número de goles\n+2.5 1.30  -2.5 3.50\n\n🎯 Ambos equipos marcan\nSI 1.50  NO 2.50"
+  },
+  {
+    "id": 72,
+    "registered_at": "2026-08-23 02:14:07",
+    "timezone": "America/Bogota",
+    "league": "Iceland Besta deild",
+    "match": "Víkingur Reykjavík - Valur",
+    "date": "dom, 23 ago 2026 19:15",
+    "api_date": null,
+    "strategy": "Más de 1.5 goles Primer Tiempo",
+    "odds": 1.66,
+    "result": "PENDIENTE",
+    "result_at": null,
+    "fixture_id": null,
+    "raw_message": "💎  mas de 1,5 goles primer tiempo \n\n🏆Iceland Besta deild\n🆚  Víkingur Reykjavík - Valur\n🗓 dom, 23 ago 2026 19:15\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 1 \n\n📈 Posición en el ranking: 1 - 7\n\n🎯 Resultado deseado: Más de 1.5 goles Primer Tiempo\n\n🟢 bet365: 1.66\n\nCuotas:🎯 1X2\n1 1.25  X 6.00  2 7.00\n\n🎯 Número de goles\n+2.5 1.22  -2.5 4.00\n\n🎯 Ambos equipos marcan\nSI 1.50  NO 2.50"
+  },
+  {
+    "id": 73,
+    "registered_at": "2026-08-23 02:14:08",
+    "timezone": "America/Bogota",
+    "league": "Spain La Liga",
+    "match": "Elche - FC Barcelona",
+    "date": "dom, 23 ago 2026 19:30",
+    "api_date": null,
+    "strategy": "Más de 3.5 goles",
+    "odds": 2.1,
+    "result": "PENDIENTE",
+    "result_at": null,
+    "fixture_id": null,
+    "raw_message": "💎  mas de 3,5 goles \n\n🏆Spain La Liga\n🆚  Elche - FC Barcelona\n🗓 dom, 23 ago 2026 19:30\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 28 \n\n📈 Posición en el ranking: 9 - 15\n\n🎯 Resultado deseado: Más de 3.5 goles\n\n🟢 bet365: 2.1\n\nCuotas:🎯 1X2\n1 7.50  X 5.50  2 1.36\n\n🎯 Número de goles\n+2.5 1.44  -2.5 2.75\n\n🎯 Ambos equipos marcan\nSI 1.75  NO 2.00"
   }
 ]
