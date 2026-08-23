@@ -752,5 +752,60 @@
     "profit": 0,
     "final_score": null,
     "raw_message": "💎  mas de 3,5 goles \n\n🏆Moldova Super Liga\n🆚  Sheriff - FC Politehnica\n🗓 dom, 23 ago 2026 17:00\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 21 \n\n📈 Posición en el ranking: 1 - 5\n\n🎯 Resultado deseado: Más de 3.5 goles\n\n🟢 1xbet: 2.08\n\nCuotas:🎯 1X2\n1 1.16  X 6.25  2 12.00\n\n🎯 Número de goles\n+2.5 1.50  -2.5 2.50\n\n🎯 Ambos equipos marcan\nSI 1.74  NO 1.94"
+  },
+  {
+    "id": 59,
+    "registered_at": "2026-08-23 06:33:35",
+    "league": "Argentina Liga Profesional de Fútbol",
+    "match": "Sarmiento - Estudiantes",
+    "date": "dom, 23 ago 2026 17:45",
+    "strategy": "Ambos Equipos Anotan NO",
+    "odds": 1.7,
+    "result": "PENDIENTE",
+    "raw_message": "💎  ambos equipos marcan no riesgo medio \n\n🏆Argentina Liga Profesional de Fútbol\n🆚  Sarmiento - Estudiantes\n🗓 dom, 23 ago 2026 17:45\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 7 \n\n📈 Posición en el ranking: 4 - 10\n\n🎯 Resultado deseado: Ambos Equipos Anotan NO\n\n🟢 bet365: 1.7\n\nCuotas:🎯 1X2\n1 3.50  X 2.87  2 2.40\n\n🎯 Número de goles\n+2.5 2.60  -2.5 1.47\n\n🎯 Ambos equipos marcan\nSI 2.05  NO 1.70"
+  },
+  {
+    "id": 60,
+    "registered_at": "2026-08-23 06:33:35",
+    "league": "Argentina Liga Profesional de Fútbol",
+    "match": "Barracas Central - Platense",
+    "date": "dom, 23 ago 2026 17:45",
+    "strategy": "Ambos Equipos Anotan NO",
+    "odds": 1.53,
+    "result": "PENDIENTE",
+    "raw_message": "💎  ambos equipos marcan no riesgo medio \n\n🏆Argentina Liga Profesional de Fútbol\n🆚  Barracas Central - Platense\n🗓 dom, 23 ago 2026 17:45\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 8 \n\n📈 Posición en el ranking: 6 - 14\n\n🎯 Resultado deseado: Ambos Equipos Anotan NO\n\n🟢 bet365: 1.53\n\nCuotas:🎯 1X2\n1 2.55  X 2.80  2 3.30\n\n🎯 Número de goles\n+2.5 3.40  -2.5 1.33\n\n🎯 Ambos equipos marcan\nSI 2.37  NO 1.53"
+  },
+  {
+    "id": 61,
+    "registered_at": "2026-08-23 06:33:36",
+    "league": "USA NWSL",
+    "match": "Chicago Stars W - Racing Louisville W",
+    "date": "dom, 23 ago 2026 18:00",
+    "strategy": "Más de 3.5 goles",
+    "odds": null,
+    "result": "PENDIENTE",
+    "raw_message": "💎  mas de 3,5 goles \n\n🏆USA NWSL\n🆚  Chicago Stars W - Racing Louisville W\n🗓 dom, 23 ago 2026 18:00\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 22 \n\n📈 Posición en el ranking: 16 - 12\n\n🎯 Resultado deseado: Más de 3.5 goles\n\n🟢 1xbet: 2.34\n\nCuotas:🎯 1X2\n1 3.80  X 3.50  2 1.73\n\n🎯 Número de goles\n+2.5 1.50  -2.5 2.28\n\n🎯 Ambos equipos marcan\nSI 1.53  NO 2.30"
+  },
+  {
+    "id": 62,
+    "registered_at": "2026-08-23 06:33:37",
+    "league": "Mexico Liga Mx Women",
+    "match": "Puebla W - Atlético San Luis W",
+    "date": "dom, 23 ago 2026 18:00",
+    "strategy": "Más de 3.5 goles",
+    "odds": null,
+    "result": "PENDIENTE",
+    "raw_message": "💎  mas de 3,5 goles \n\n🏆Mexico Liga Mx Women\n🆚  Puebla W - Atlético San Luis W\n🗓 dom, 23 ago 2026 18:00\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 23 \n\n📈 Posición en el ranking: 18 - 13\n\n🎯 Resultado deseado: Más de 3.5 goles\n\n🟢 1xbet: 2.36\n\nCuotas:🎯 1X2\n1 4.84  X 4.26  2 1.57\n\n🎯 Número de goles\n+2.5 1.51  -2.5 2.26\n\n🎯 Ambos equipos marcan\nSI 1.60  NO 2.15"
+  },
+  {
+    "id": 63,
+    "registered_at": "2026-08-23 06:33:37",
+    "league": "Argentina Primera B Nacional",
+    "match": "Club Atlético Chacarita Juniors - San Martín de Tucumán",
+    "date": "dom, 23 ago 2026 18:30",
+    "strategy": "Empate Primer Tiempo",
+    "odds": 1.8,
+    "result": "PENDIENTE",
+    "raw_message": "💎  EMPATE 1°T\n\n🏆Argentina Primera B Nacional\n🆚  Club Atlético Chacarita Juniors - San Martín de Tucumán\n🗓 dom, 23 ago 2026 18:30\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 2 \n\n📈 Posición en el ranking: 16 - 10\n\n🎯 Resultado deseado: Empate Primer Tiempo\n\n🟢 bet365: 1.8\n\nCuotas:🎯 1X2\n1 2.62  X 2.75  2 3.10\n\n🎯 Número de goles\n+2.5 3.40  -2.5 1.33\n\n🎯 Ambos equipos marcan\nSI 2.50  NO 1.50"
   }
 ]
