@@ -16,36 +16,20 @@ jobs:
 
     steps:
 
-      # ==========================================
-      # DESCARGAR REPOSITORIO
-      # ==========================================
-
       - name: Descargar código
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # ==========================================
-      # PYTHON
-      # ==========================================
 
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # ==========================================
-      # DEPENDENCIAS
-      # ==========================================
-
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
           pip install requests
-
-      # ==========================================
-      # EJECUTAR BOT
-      # ==========================================
 
       - name: Ejecutar Football Alerts
         env:
@@ -55,21 +39,15 @@ jobs:
         run: |
           python football_alerts.py
 
-      # ==========================================
-      # GUARDAR SIGNALS.JSON
-      # ==========================================
-
-      - name: Guardar apuestas
+      - name: Guardar datos
         run: |
-
           git config user.name "Football Alerts Bot"
-
           git config user.email "football-alerts-bot@users.noreply.github.com"
 
-          git add signals.json
+          git add signals.json bot_state.json
 
           if git diff --cached --quiet; then
-            echo "ℹ️ No hay cambios en signals.json"
+            echo "No hay cambios para guardar"
           else
             git commit -m "Actualizar apuestas y estadísticas"
             git push origin HEAD:main
