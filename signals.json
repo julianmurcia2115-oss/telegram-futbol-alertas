@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "id": 1787518508075,
+    "fecha_registro": "2026-08-23 15:55:08",
+    "timestamp": "2026-08-23T20:55:08.075703+00:00",
+    "home": "Alajuelense",
+    "away": "San Carlos",
+    "liga": "Costa Rica Primera Division",
+    "fecha_partido": "lun, 24 ago 2026 00:00",
+    "estrategia": "BTTS SI",
+    "cuota": 1.44,
+    "stake": 5000,
+    "resultado": "ganada",
+    "resultado_manual": true,
+    "ganancia": 2200.0,
+    "fixture_id": null,
+    "goles_home": null,
+    "goles_away": null,
+    "goles_home_ht": null,
+    "goles_away_ht": null,
+    "fecha_resultado": "2026-08-23 15:55:16",
+    "texto_original": "💎  LOCAL GANA (10.000)\n\n🏆Costa Rica Primera Division\n🆚  Alajuelense - San Carlos\n🗓 lun, 24 ago 2026 00:00\n\n\n🎳  Success Percentage: 0.0% \n💰  ROI: 0.0% \n⚽️  picks: 11 \n\n📈 Posición en el ranking: 2 - 9\n\n🎯 Resultado deseado: Victoria Local\n\n🟢 bet365: 1.44\n\nCuotas:🎯 1X2\n1 1.44  X 4.00  2 5.75\n\n🎯 Número de goles\n+2.5 1.70  -2.5 2.10\n\n🎯 Ambos equipos marcan\nSI 1.83  NO 1.83",
+    "retorno": 7200.0
+  }
+]
