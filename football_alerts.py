@@ -633,7 +633,7 @@ def signal_already_exists(
     return False
 
 
-def register_signal(text):
+def register_signal(text, chat_id=None):
 
     signals = load_signals()
 
@@ -660,6 +660,12 @@ def register_signal(text):
 
         "timezone":
             "America/Bogota",
+
+        # chat_id del usuario que envió la señal.
+        # Se usa para poder avisarle automáticamente
+        # cuando el partido termine.
+        "chat_id":
+            chat_id,
 
         "league":
             extract(
@@ -1084,6 +1090,96 @@ def find_fixture_for_signal(signal):
 
 
 # =========================================================
+# NOTIFICACIÓN DE RESULTADO FINAL
+# =========================================================
+
+def notify_result(signal):
+    """
+    Envía al chat que generó la señal un aviso de que
+    el partido terminó y si la apuesta se ganó o perdió.
+    Si la señal no tiene chat_id (por ejemplo, señales
+    antiguas registradas antes de este cambio) no se
+    envía ningún mensaje.
+    """
+
+    chat_id = signal.get("chat_id")
+
+    if not chat_id:
+
+        print(
+            "ℹ️ Señal sin chat_id, no se notifica:",
+            signal.get("match")
+        )
+
+        return
+
+    result = signal.get("result")
+
+    won = result == "GANADA"
+
+    odds = signal.get("odds")
+
+    if won:
+
+        if (
+            isinstance(odds, (int, float))
+            and odds > 1
+        ):
+
+            profit = BET_AMOUNT * (odds - 1)
+
+        else:
+
+            profit = BET_AMOUNT
+
+        emoji = "✅"
+        title = "GANADA"
+        profit_line = f"+ ${profit:,.0f} COP"
+
+    else:
+
+        profit = -BET_AMOUNT
+
+        emoji = "❌"
+        title = "PERDIDA"
+        profit_line = f"- ${BET_AMOUNT:,.0f} COP"
+
+    home_goals = signal.get("final_home_goals")
+
+    away_goals = signal.get("final_away_goals")
+
+    odds_text = (
+
+        f"{odds:.2f}"
+
+        if isinstance(odds, (int, float))
+
+        else "N/D"
+    )
+
+    text = f"""
+{emoji} SEÑAL {title}
+━━━━━━━━━━━━━━━━━━━━
+
+🆔 #{signal.get('id')}
+
+🏆 {signal.get('league')}
+
+⚽ {signal.get('match')}
+📟 Marcador final: {home_goals}-{away_goals}
+
+🎯 {signal.get('strategy')}
+
+💰 Cuota: {odds_text}
+💵 Resultado: {profit_line}
+
+🇨🇴 {colombia_datetime()}
+"""
+
+    send_message(chat_id, text)
+
+
+# =========================================================
 # ACTUALIZAR RESULTADOS
 # =========================================================
 
@@ -1431,6 +1527,12 @@ def update_pending_results():
                 "|",
                 f"{current_home}-{current_away}"
             )
+
+            # =============================================
+            # NOTIFICAR AL USUARIO POR TELEGRAM
+            # =============================================
+
+            notify_result(signal)
 
         except Exception as e:
 
@@ -2343,7 +2445,8 @@ def process_message(message):
         return
 
     signal = register_signal(
-        text
+        text,
+        chat_id
     )
 
     if signal is None:
@@ -2390,8 +2493,8 @@ def process_message(message):
 
 ━━━━━━━━━━━━━━━━━━━━
 
-🤖 El resultado será
-comprobado automáticamente.
+🤖 Te avisaré automáticamente
+cuando el partido termine.
 """
     )
 
