@@ -225,72 +225,106 @@ def extraer_resultado_deseado(texto):
 
 
 def identificar_mercado(texto):
-    t = normalizar(texto)
-    resultado_deseado = normalizar(extraer_resultado_deseado(texto))
+    """
+    Clasifica el mercado usando SOLO el campo 'Resultado deseado',
+    no el texto completo del mensaje (que siempre trae la tabla
+    de cuotas de referencia con 1X2 / goles / BTTS incluida,
+    sin importar cuál sea la selección real).
+    """
+    resultado_deseado = extraer_resultado_deseado(texto)
+    d = normalizar(resultado_deseado)
 
-    if any(x in t for x in ["ambos equipos marcan", "ambos marcan", "btts", "both teams to score"]):
-        if " no" in " " + resultado_deseado or resultado_deseado.endswith("no"):
+    if not d:
+        return "OTRO MERCADO"
+
+    # --------------------------------------------------------
+    # 1X2
+    # --------------------------------------------------------
+    if "victoria local" in d or "gana local" in d or d in ("1", "local"):
+        return "1X2 - Local"
+
+    if "victoria visitante" in d or "gana visitante" in d or d in ("2", "visitante"):
+        return "1X2 - Visitante"
+
+    if "empate" in d and "1t" not in d and "descanso" not in d:
+        return "1X2 - Empate"
+
+    # --------------------------------------------------------
+    # BTTS
+    # --------------------------------------------------------
+    if "ambos" in d or "btts" in d:
+        palabras = d.split()
+        if "no" in palabras:
             return "BTTS NO"
-        if " si" in " " + resultado_deseado or resultado_deseado.endswith("si"):
+        if "si" in palabras:
             return "BTTS SI"
-        if re.search(r"ambos equipos marcan.*no\s+[0-9]", t):
-            return "BTTS NO"
         return "BTTS"
 
-    patron = re.search(r"(\+|-)\s*([0-9]+(?:\.[0-9]+)?)", t)
-    if patron:
-        return f"Más de {patron.group(2)} goles" if patron.group(1) == "+" else f"Menos de {patron.group(2)} goles"
+    # --------------------------------------------------------
+    # OVER / UNDER
+    # --------------------------------------------------------
+    m = re.search(r"mas de\s*([0-9]+(?:\.[0-9]+)?)", d) or re.search(r"over\s*([0-9]+(?:\.[0-9]+)?)", d)
+    if m:
+        return f"Más de {m.group(1)} goles"
 
-    for patron_str in [r"mas de\s*([0-9]+(?:\.[0-9]+)?)", r"over\s*([0-9]+(?:\.[0-9]+)?)"]:
-        m = re.search(patron_str, t)
-        if m:
-            return f"Más de {m.group(1)} goles"
+    m = re.search(r"menos de\s*([0-9]+(?:\.[0-9]+)?)", d) or re.search(r"under\s*([0-9]+(?:\.[0-9]+)?)", d)
+    if m:
+        return f"Menos de {m.group(1)} goles"
 
-    for patron_str in [r"menos de\s*([0-9]+(?:\.[0-9]+)?)", r"under\s*([0-9]+(?:\.[0-9]+)?)"]:
-        m = re.search(patron_str, t)
-        if m:
-            return f"Menos de {m.group(1)} goles"
+    # --------------------------------------------------------
+    # DOBLE OPORTUNIDAD
+    # --------------------------------------------------------
+    if "doble oportunidad" in d or "double chance" in d:
+        return f"Doble oportunidad - {resultado_deseado.upper()}"
 
-    if "1x2" in t:
-        if "empate" in resultado_deseado or resultado_deseado == "x":
-            return "1X2 - Empate"
-        if "local" in resultado_deseado or resultado_deseado == "1":
-            return "1X2 - Local"
-        if "visitante" in resultado_deseado or resultado_deseado == "2":
-            return "1X2 - Visitante"
-        return "1X2"
-
-    if "doble oportunidad" in t or "double chance" in t:
-        return f"Doble oportunidad - {resultado_deseado.upper()}" if resultado_deseado else "Doble oportunidad"
-
-    if any(x in t for x in ["empate 1t", "empate al descanso", "empate descanso", "half time draw"]):
+    # --------------------------------------------------------
+    # EMPATE AL DESCANSO
+    # --------------------------------------------------------
+    if "empate 1t" in d or "empate descanso" in d or "empate al descanso" in d:
         return "Empate 1T"
 
-    if "handicap" in t or "hándicap" in texto.lower():
-        return f"Hándicap - {resultado_deseado.upper()}" if resultado_deseado else "Hándicap"
+    # --------------------------------------------------------
+    # HANDICAP
+    # --------------------------------------------------------
+    if "handicap" in d or "hándicap" in resultado_deseado.lower():
+        return f"Hándicap - {resultado_deseado.upper()}"
 
-    if "goles equipo local" in t or "team goals home" in t:
+    # --------------------------------------------------------
+    # CORNERS
+    # --------------------------------------------------------
+    if "corner" in d:
+        return f"Corners - {resultado_deseado.upper()}"
+
+    # --------------------------------------------------------
+    # TARJETAS
+    # --------------------------------------------------------
+    if "tarjeta" in d or "card" in d:
+        return f"Tarjetas - {resultado_deseado.upper()}"
+
+    # --------------------------------------------------------
+    # PRIMER EQUIPO EN MARCAR
+    # --------------------------------------------------------
+    if "primer equipo en marcar" in d or "first team to score" in d:
+        return f"Primer equipo en marcar - {resultado_deseado.upper()}"
+
+    # --------------------------------------------------------
+    # GOLES EQUIPO
+    # --------------------------------------------------------
+    if "goles equipo local" in d:
         return "Goles equipo local"
-    if "goles equipo visitante" in t or "team goals away" in t:
+
+    if "goles equipo visitante" in d:
         return "Goles equipo visitante"
 
-    if any(x in t for x in ["corner", "corners", "tiros de esquina"]):
-        return f"Corners - {resultado_deseado.upper()}" if resultado_deseado else "Corners"
-
-    if any(x in t for x in ["tarjetas", "cards", "card"]):
-        return f"Tarjetas - {resultado_deseado.upper()}" if resultado_deseado else "Tarjetas"
-
-    if "primer equipo en marcar" in t or "first team to score" in t:
-        return f"Primer equipo en marcar - {resultado_deseado.upper()}" if resultado_deseado else "Primer equipo en marcar"
-
-    if resultado_deseado:
-        return resultado_deseado.upper()
-
-    return "OTRO MERCADO"
+    # --------------------------------------------------------
+    # CUALQUIER OTRO — usar tal cual el texto de la selección
+    # --------------------------------------------------------
+    return resultado_deseado.upper()
 
 
 def crear_apuesta(texto):
     home, away = extraer_partido(texto)
+    mercado = identificar_mercado(texto)
     return {
         "id": int(time.time() * 1000),
         "fecha_registro": ahora_colombia(),
@@ -299,8 +333,8 @@ def crear_apuesta(texto):
         "away": away,
         "liga": extraer_liga(texto),
         "fecha_partido": extraer_fecha(texto),
-        "mercado": identificar_mercado(texto),
-        "estrategia": identificar_mercado(texto),
+        "mercado": mercado,
+        "estrategia": mercado,
         "resultado_deseado": extraer_resultado_deseado(texto),
         "cuota": extraer_cuota(texto),
         "stake": STAKE,
