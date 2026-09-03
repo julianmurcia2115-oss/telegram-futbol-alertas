@@ -114,6 +114,21 @@ def enviar(mensaje, chat_id=None, botones=None):
     return telegram_api("sendMessage", datos)
 
 
+def botones_panel():
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "📊 Rendimiento", "callback_data": "rentabilidad"},
+                {"text": "🏆 Estrategias", "callback_data": "estrategias"}
+            ],
+            [
+                {"text": "🟡 Pendientes", "callback_data": "pendientes"},
+                {"text": "📋 Panel", "callback_data": "panel"}
+            ]
+        ]
+    }
+
+
 # ============================================================
 # UTILIDADES
 # ============================================================
@@ -176,11 +191,18 @@ def parsear_fecha_partido(texto_fecha):
 # EXTRACCIÓN DE DATOS DE LA SEÑAL
 # ============================================================
 def extraer_partido(texto):
-    patron = re.search(r"🆚\s*(.+?)\s*[-–]\s*(.+?)(?:\n|$)", texto, re.IGNORECASE)
-    if patron:
-        return patron.group(1).strip(), patron.group(2).strip()
-    return "Desconocido", "Desconocido"
+    patron = re.search(
+        r"🆚\s*(?:\d{1,3}'\s*)?(.+?)\s*[-–]\s*(.+?)(?:\s+\d+\s*[-–]\s*\d+)?\s*(?:\n|$)",
+        texto,
+        re.IGNORECASE
+    )
+    if not patron:
+        return "Desconocido", "Desconocido"
 
+    home = re.sub(r"^\d{1,3}'\s*", "", patron.group(1)).strip()
+    away = re.sub(r"\s+\d+\s*[-–]\s*\d+\s*$", "", patron.group(2)).strip()
+
+    return home, away
 
 def extraer_liga(texto):
     patron = re.search(r"🏆\s*(.+)", texto)
@@ -225,118 +247,87 @@ def extraer_resultado_deseado(texto):
 
 
 def identificar_mercado(texto):
-    """
-    Clasifica el mercado usando SOLO el campo 'Resultado deseado',
-    no el texto completo del mensaje (que siempre trae la tabla
-    de cuotas de referencia con 1X2 / goles / BTTS incluida,
-    sin importar cuál sea la selección real).
-    """
-    resultado_deseado = extraer_resultado_deseado(texto)
-    d = normalizar(resultado_deseado)
+    t = normalizar(texto)
 
-    if not d:
-        return "OTRO MERCADO"
+    # Detectar si el mercado corresponde a corners
+    es_corner = any(x in t for x in [
+        "saques de esquina",
+        "saque de esquina",
+        "corners",
+        "corner",
+    ])
 
-    # --------------------------------------------------------
-    # 1X2
-    # --------------------------------------------------------
-    if "victoria local" in d or "gana local" in d or d in ("1", "local"):
-        return "1X2 - Local"
-
-    if "victoria visitante" in d or "gana visitante" in d or d in ("2", "visitante"):
-        return "1X2 - Visitante"
-
-    if "empate" in d and "1t" not in d and "descanso" not in d:
-        return "1X2 - Empate"
-
-    # --------------------------------------------------------
-    # BTTS
-    # --------------------------------------------------------
-    if "ambos" in d or "btts" in d:
-        palabras = d.split()
-        if "no" in palabras:
+    # Ambos marcan
+    if "ambos marcan" in t:
+        if "no" in t:
             return "BTTS NO"
-        if "si" in palabras:
+        if "si" in t:
             return "BTTS SI"
-        return "BTTS"
 
-    # --------------------------------------------------------
-    # OVER / UNDER
-    # --------------------------------------------------------
-    m = re.search(r"mas de\s*([0-9]+(?:\.[0-9]+)?)", d) or re.search(r"over\s*([0-9]+(?:\.[0-9]+)?)", d)
-    if m:
-        return f"Más de {m.group(1)} goles"
-
-    m = re.search(r"menos de\s*([0-9]+(?:\.[0-9]+)?)", d) or re.search(r"under\s*([0-9]+(?:\.[0-9]+)?)", d)
-    if m:
-        return f"Menos de {m.group(1)} goles"
-
-    # --------------------------------------------------------
-    # DOBLE OPORTUNIDAD
-    # --------------------------------------------------------
-    if "doble oportunidad" in d or "double chance" in d:
-        return f"Doble oportunidad - {resultado_deseado.upper()}"
-
-    # --------------------------------------------------------
-    # EMPATE AL DESCANSO
-    # --------------------------------------------------------
-    if "empate 1t" in d or "empate descanso" in d or "empate al descanso" in d:
+    # Empate al descanso
+    if (
+        "empate 1t" in t
+        or "empate 1 t" in t
+        or "empate primer tiempo" in t
+    ):
         return "Empate 1T"
 
-    # --------------------------------------------------------
-    # HANDICAP
-    # --------------------------------------------------------
-    if "handicap" in d or "hándicap" in resultado_deseado.lower():
-        return f"Hándicap - {resultado_deseado.upper()}"
+    # 1X2
+    if "1x2" in t:
+        if "local" in t:
+            return "1X2 - Local"
+        if "visitante" in t:
+            return "1X2 - Visitante"
+        if "empate" in t:
+            return "1X2 - Empate"
 
-    # --------------------------------------------------------
-    # CORNERS
-    # --------------------------------------------------------
-    if "corner" in d:
-        return f"Corners - {resultado_deseado.upper()}"
+    # Más de
+    m = re.search(r"mas de ([0-9]+(?:\.[0-9]+)?)", t)
+    if m:
+        linea = m.group(1)
+        return f"Más de {linea} corners" if es_corner else f"Más de {linea} goles"
 
-    # --------------------------------------------------------
-    # TARJETAS
-    # --------------------------------------------------------
-    if "tarjeta" in d or "card" in d:
-        return f"Tarjetas - {resultado_deseado.upper()}"
+    # Menos de
+    m = re.search(r"menos de ([0-9]+(?:\.[0-9]+)?)", t)
+    if m:
+        linea = m.group(1)
+        return f"Menos de {linea} corners" if es_corner else f"Menos de {linea} goles"
 
-    # --------------------------------------------------------
-    # PRIMER EQUIPO EN MARCAR
-    # --------------------------------------------------------
-    if "primer equipo en marcar" in d or "first team to score" in d:
-        return f"Primer equipo en marcar - {resultado_deseado.upper()}"
-
-    # --------------------------------------------------------
-    # GOLES EQUIPO
-    # --------------------------------------------------------
-    if "goles equipo local" in d:
-        return "Goles equipo local"
-
-    if "goles equipo visitante" in d:
-        return "Goles equipo visitante"
-
-    # --------------------------------------------------------
-    # CUALQUIER OTRO — usar tal cual el texto de la selección
-    # --------------------------------------------------------
-    return resultado_deseado.upper()
+    return "Desconocido"
 
 
-def crear_apuesta(texto):
+def registrar_apuesta(texto):
+    """Registra una nueva señal recibida por Telegram."""
+
     home, away = extraer_partido(texto)
+    liga = extraer_liga(texto)
+    fecha_partido = extraer_fecha(texto)
+    cuota = extraer_cuota(texto)
+    resultado_deseado = extraer_resultado_deseado(texto)
     mercado = identificar_mercado(texto)
-    return {
+
+    # No registrar mensajes que no parezcan señales de apuesta
+    if (
+        home == "Desconocido"
+        or away == "Desconocido"
+        or not fecha_partido
+        or not resultado_deseado
+    ):
+        print("⚠️ Mensaje ignorado: no parece una señal válida.")
+        return
+
+    ahora = datetime.now(timezone.utc)
+
+    apuesta = {
         "id": int(time.time() * 1000),
         "fecha_registro": ahora_colombia(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": ahora.isoformat(),
         "home": home,
         "away": away,
-        "liga": extraer_liga(texto),
-        "fecha_partido": extraer_fecha(texto),
-        "mercado": mercado,
+        "liga": liga,
+        "fecha_partido": fecha_partido,
         "estrategia": mercado,
-        "resultado_deseado": extraer_resultado_deseado(texto),
-        "cuota": extraer_cuota(texto),
+        "cuota": cuota,
         "stake": STAKE,
         "resultado": "pendiente",
         "resultado_manual": False,
@@ -348,196 +339,108 @@ def crear_apuesta(texto):
         "goles_away_ht": None,
         "fecha_resultado": None,
         "texto_original": texto,
+        "mercado": mercado,
+        "resultado_deseado": resultado_deseado,
     }
 
-
-def apuesta_duplicada(apuestas, nueva):
-    for apuesta in apuestas:
-        if (
-            normalizar(apuesta.get("home", "")) == normalizar(nueva.get("home", ""))
-            and normalizar(apuesta.get("away", "")) == normalizar(nueva.get("away", ""))
-            and normalizar(apuesta.get("mercado", apuesta.get("estrategia", ""))) == normalizar(nueva.get("mercado", ""))
-            and apuesta.get("fecha_partido") == nueva.get("fecha_partido")
-        ):
-            return True
-    return False
-
-
-# ============================================================
-# BOTONES Y MENSAJES DE TELEGRAM
-# ============================================================
-def botones_apuesta(apuesta):
-    return {
-        "inline_keyboard": [
-            [
-                {"text": "✅ GANADA", "callback_data": f"resultado_ganada:{apuesta['id']}"},
-                {"text": "❌ PERDIDA", "callback_data": f"resultado_perdida:{apuesta['id']}"},
-            ],
-            [{"text": "📊 ABRIR PANEL", "callback_data": "panel"}],
-        ]
-    }
-
-
-def botones_panel():
-    return {
-        "inline_keyboard": [
-            [{"text": "📊 ACTUALIZAR PANEL", "callback_data": "panel"}],
-            [{"text": "🏆 ESTRATEGIAS / MERCADOS", "callback_data": "estrategias"}],
-            [{"text": "💹 MERCADO MÁS RENTABLE", "callback_data": "rentabilidad"}],
-            [{"text": "🟡 PENDIENTES", "callback_data": "pendientes"}],
-        ]
-    }
-
-
-def enviar_apuesta_con_botones(apuesta, chat_id=None):
-    if chat_id is None:
-        chat_id = CHAT_ID
-    cuota = apuesta.get("cuota")
-    cuota_texto = f"💵 Cuota: {cuota:.2f}\n" if cuota is not None else ""
-    mensaje = (
-        "📩 <b>NUEVA APUESTA</b>\n\n"
-        f"⚽ {apuesta['home']} - {apuesta['away']}\n\n"
-        f"🏆 {apuesta['liga']}\n"
-        f"🎯 Mercado: <b>{apuesta['mercado']}</b>\n"
-        + (f"🎯 Selección: {apuesta['resultado_deseado']}\n" if apuesta.get("resultado_deseado") else "")
-        + cuota_texto
-        + f"💰 Apuesta: ${STAKE:,.0f} COP\n"
-        "📌 Estado: 🟡 PENDIENTE"
-    )
-    return telegram_api("sendMessage", {
-        "chat_id": chat_id,
-        "text": mensaje,
-        "parse_mode": "HTML",
-        "reply_markup": json.dumps(botones_apuesta(apuesta), ensure_ascii=False),
-    })
-
-
-def registrar_apuesta(texto):
     apuestas = cargar_apuestas()
-    nueva = crear_apuesta(texto)
 
-    print("====================================")
-    print("📩 NUEVA ALERTA DETECTADA")
-    print(f"⚽ {nueva['home']} - {nueva['away']}")
-    print(f"🎯 Mercado: {nueva['mercado']}")
-    print(f"🎯 Selección: {nueva['resultado_deseado']}")
-    print(f"💵 Cuota: {nueva['cuota']}")
-    print("====================================")
+    # Evitar duplicados de la misma señal
+    for existente in apuestas:
+        if (
+            existente.get("home") == home
+            and existente.get("away") == away
+            and existente.get("fecha_partido") == fecha_partido
+            and existente.get("resultado_deseado") == resultado_deseado
+            and existente.get("resultado") == "pendiente"
+        ):
+            print(
+                f"⚠️ Señal duplicada ignorada: "
+                f"{home} vs {away} | {resultado_deseado}"
+            )
+            return
 
-    if apuesta_duplicada(apuestas, nueva):
-        print("ℹ️ Apuesta duplicada")
-        return False
-
-    apuestas.append(nueva)
+    apuestas.append(apuesta)
     guardar_apuestas(apuestas)
-    print("✅ Apuesta registrada")
-    enviar_apuesta_con_botones(nueva)
-    return True
+
+    print(
+        f"✅ NUEVA APUESTA REGISTRADA: "
+        f"{home} vs {away} | {mercado} | Cuota: {cuota}"
+    )
 
 
-# ============================================================
-# API-FOOTBALL
-# ============================================================
-def api_football(endpoint, params=None):
-    url = API_URL + endpoint
-    headers = {"x-apisports-key": API_FOOTBALL_KEY}
-    try:
-        response = requests.get(url, headers=headers, params=params or {}, timeout=30)
-        print(f"⚽ API-Football {response.status_code}")
-        if response.status_code != 200:
-            print(response.text[:500])
-            return None
-        data = response.json()
-        if data.get("errors"):
-            print(f"⚠️ API errors: {data.get('errors')}")
-            return None
-        return data.get("response", [])
-    except Exception as e:
-        print(f"❌ Error API-Football: {e}")
-        return None
-
-
-def buscar_fixture(apuesta):
-    """Busca el fixture por FECHA REAL del partido (no por 'ahora')."""
-    home = apuesta.get("home", "")
-    away = apuesta.get("away", "")
-
-    if not home or not away or home == "Desconocido" or away == "Desconocido":
-        return None
-
-    fecha_base = parsear_fecha_partido(apuesta.get("fecha_partido", ""))
-    if fecha_base is None:
-        fecha_base = datetime.now(COLOMBIA_TZ)
-
-    fechas = [(fecha_base + timedelta(days=d)).strftime("%Y-%m-%d") for d in range(-1, 2)]
-
-    for fecha in fechas:
-        fixtures = api_football("/fixtures", {"date": fecha, "timezone": "America/Bogota"})
-        if not fixtures:
-            continue
-        for fixture in fixtures:
-            equipos = fixture.get("teams", {})
-            local = equipos.get("home", {}).get("name", "")
-            visitante = equipos.get("away", {}).get("name", "")
-            if nombres_equivalentes(home, local) and nombres_equivalentes(away, visitante):
-                print(f"✅ PARTIDO ENCONTRADO: {local} vs {visitante}")
-                return fixture
-    return None
-
-
-def obtener_fixtures_por_ids(ids):
-    """Consulta varios fixture_id ya conocidos en lotes de 20 (ahorra cuota)."""
-    resultado = {}
-    ids = [i for i in ids if i]
-    for i in range(0, len(ids), 20):
-        sublote = ids[i:i + 20]
-        ids_str = "-".join(str(x) for x in sublote)
-        fixtures = api_football("/fixtures", {"ids": ids_str, "timezone": "America/Bogota"})
-        if fixtures:
-            for fx in fixtures:
-                fid = fx.get("fixture", {}).get("id")
-                if fid is not None:
-                    resultado[fid] = fx
-    return resultado
-
-
-# ============================================================
-# DETERMINAR RESULTADO
-# ============================================================
 def determinar_resultado(apuesta, fixture):
     mercado = normalizar(apuesta.get("mercado", apuesta.get("estrategia", "")))
     deseado = normalizar(apuesta.get("resultado_deseado", ""))
+
     goals = fixture.get("goals", {})
     score = fixture.get("score", {})
+
     home_goals = goals.get("home")
     away_goals = goals.get("away")
+
+    # CÓRNERS
+    if "corner" in mercado or "corners" in mercado or "saques de esquina" in deseado:
+        corners = fixture.get("corners", {})
+        home_corners = corners.get("home")
+        away_corners = corners.get("away")
+
+        if home_corners is None or away_corners is None:
+            return None
+
+        total_corners = home_corners + away_corners
+
+        m = re.search(r"(?:mas de|over)\s*([0-9]+(?:\.[0-9]+)?)", mercado)
+        if m:
+            return "ganada" if total_corners > float(m.group(1)) else "perdida"
+
+        m = re.search(r"(?:menos de|under)\s*([0-9]+(?:\.[0-9]+)?)", mercado)
+        if m:
+            return "ganada" if total_corners < float(m.group(1)) else "perdida"
 
     if home_goals is None or away_goals is None:
         return None
 
     total = home_goals + away_goals
 
+    # BTTS
     if "btts no" in mercado or ("ambos" in deseado and "no" in deseado):
         return "ganada" if not (home_goals >= 1 and away_goals >= 1) else "perdida"
 
     if "btts si" in mercado or mercado == "btts" or ("ambos" in deseado and "si" in deseado):
-        return "ganada" if (home_goals >= 1 and away_goals >= 1) else "perdida"
+        return "ganada" if home_goals >= 1 and away_goals >= 1 else "perdida"
 
-    patron = re.search(r"mas de\s*([0-9]+(?:\.[0-9]+)?)", mercado) or re.search(r"over\s*([0-9]+(?:\.[0-9]+)?)", mercado)
-    if patron:
-        return "ganada" if total > float(patron.group(1)) else "perdida"
+    # GOLES POR EQUIPO
+    patrones = [
+        (r"local\s+mas de\s*([0-9]+(?:\.[0-9]+)?)", home_goals, True),
+        (r"visitante\s+mas de\s*([0-9]+(?:\.[0-9]+)?)", away_goals, True),
+        (r"local\s+menos de\s*([0-9]+(?:\.[0-9]+)?)", home_goals, False),
+        (r"visitante\s+menos de\s*([0-9]+(?:\.[0-9]+)?)", away_goals, False),
+    ]
 
-    patron = re.search(r"menos de\s*([0-9]+(?:\.[0-9]+)?)", mercado) or re.search(r"under\s*([0-9]+(?:\.[0-9]+)?)", mercado)
-    if patron:
-        return "ganada" if total < float(patron.group(1)) else "perdida"
+    for patron, goles, es_mas in patrones:
+        m = re.search(patron, deseado)
+        if m:
+            linea = float(m.group(1))
+            return "ganada" if (goles > linea if es_mas else goles < linea) else "perdida"
 
+    # OVER / UNDER GOLES
+    m = re.search(r"(?:mas de|over)\s*([0-9]+(?:\.[0-9]+)?)", mercado)
+    if m:
+        return "ganada" if total > float(m.group(1)) else "perdida"
+
+    m = re.search(r"(?:menos de|under)\s*([0-9]+(?:\.[0-9]+)?)", mercado)
+    if m:
+        return "ganada" if total < float(m.group(1)) else "perdida"
+
+    # EMPATE 1T
     if "empate 1t" in mercado or "empate descanso" in mercado:
         ht = score.get("halftime", {})
-        ht_home, ht_away = ht.get("home"), ht.get("away")
-        if ht_home is None or ht_away is None:
+        if ht.get("home") is None or ht.get("away") is None:
             return None
-        return "ganada" if ht_home == ht_away else "perdida"
+        return "ganada" if ht["home"] == ht["away"] else "perdida"
 
+    # 1X2
     if "1x2" in mercado:
         if "empate" in mercado or deseado == "x":
             return "ganada" if home_goals == away_goals else "perdida"
@@ -546,8 +449,7 @@ def determinar_resultado(apuesta, fixture):
         if "visitante" in mercado or deseado == "2":
             return "ganada" if away_goals > home_goals else "perdida"
 
-    return None  # mercado no soportado automáticamente -> queda para cierre manual
-
+    return None
 
 def calcular_ganancia(apuesta, resultado):
     if resultado == "perdida":
@@ -658,6 +560,369 @@ def actualizar_resultados():
         print("ℹ️ No hubo resultados nuevos")
 
     return cambios
+
+
+# ============================================================
+# 365SCORES — RESULTADOS
+# ============================================================
+
+SCORES_URL = "https://webws.365scores.com/web/games/results/"
+
+
+def buscar_competidor_365(nombre):
+    """Busca de forma segura el ID de un equipo en 365Scores."""
+
+    if not nombre or nombre == "Desconocido":
+        return None
+
+    estado = cargar_estado()
+    cache = estado.get("365scores_competitors", {})
+    clave = normalizar(nombre)
+
+    if clave in cache:
+        return cache[clave]
+
+    try:
+        consultas = [nombre]
+
+        # Para nombres muy cortos o ambiguos, probar variantes con FC.
+        palabras_nombre = clave.split()
+
+        if len(palabras_nombre) <= 2 and not clave.startswith("fc "):
+            consultas.append(f"FC {nombre}")
+
+        mejor = None
+        mejor_puntaje = -1
+        consulta_ganadora = None
+
+        for consulta in consultas:
+            params = {
+                "q": consulta,
+                "langId": 31,
+                "timezoneName": "America/Bogota",
+                "userCountryId": -1,
+                "appTypeId": 5,
+            }
+
+            r = requests.get(
+                "https://webws.365scores.com/web/search/",
+                params=params,
+                timeout=40,
+            )
+
+            if r.status_code != 200:
+                print(
+                    f"⚠️ 365Scores search HTTP {r.status_code} "
+                    f"para {consulta}"
+                )
+                continue
+
+            data = r.json()
+            candidatos = data.get("competitors", [])
+
+            nombre_normalizado = normalizar(nombre)
+            consulta_normalizada = normalizar(consulta)
+            palabras_a = set(nombre_normalizado.split())
+            palabras_consulta = set(consulta_normalizada.split())
+
+            for comp in candidatos:
+                nombre_365 = comp.get("name", "")
+
+                # Solo equipos de fútbol.
+                if comp.get("sportId") != 1 or comp.get("type") != 1:
+                    continue
+
+                if not nombre_365:
+                    continue
+
+                nombre_comp = normalizar(nombre_365)
+                palabras_b = set(nombre_comp.split())
+
+                if not palabras_b:
+                    continue
+
+                # Coincidencia exacta con la búsqueda realizada.
+                if nombre_comp == consulta_normalizada:
+                    puntaje = 2000
+
+                # Coincidencia exacta con el nombre original.
+                elif nombre_comp == nombre_normalizado:
+                    puntaje = 1900
+
+                else:
+                    inter = palabras_a.intersection(palabras_b)
+                    inter_consulta = palabras_consulta.intersection(palabras_b)
+
+                    # Si usamos "FC Thun", aceptar "FC Thun" exactamente
+                    # y priorizarlo sobre coincidencias parciales.
+                    if palabras_consulta.issubset(palabras_b):
+                        puntaje = 900 + len(inter_consulta) * 20
+
+                    elif palabras_b.issubset(palabras_a):
+                        puntaje = 800 + len(inter) * 20
+
+                    elif palabras_a.issubset(palabras_b):
+                        puntaje = 750 + len(inter) * 20
+
+                    elif inter:
+                        porcentaje = len(inter) / max(
+                            len(palabras_a),
+                            len(palabras_b)
+                        )
+                        puntaje = int(porcentaje * 500)
+
+                        # Una sola palabra compartida no es suficiente
+                        # para nombres cortos o ambiguos.
+                        if len(inter) == 1:
+                            puntaje = min(puntaje, 200)
+
+                    else:
+                        puntaje = 0
+
+                if puntaje > mejor_puntaje:
+                    mejor_puntaje = puntaje
+                    mejor = comp
+                    consulta_ganadora = consulta
+
+        # No aceptar coincidencias débiles.
+        if not mejor or mejor_puntaje < 700:
+            print(
+                f"⚠️ 365Scores: no se encontró coincidencia segura "
+                f"para {nombre}"
+            )
+            return None
+
+        competitor_id = mejor.get("id")
+        nombre_encontrado = mejor.get("name")
+
+        if not competitor_id:
+            return None
+
+        cache[clave] = competitor_id
+        estado["365scores_competitors"] = cache
+        guardar_estado(estado)
+
+        print(
+            f"✅ 365Scores equipo: {nombre} → "
+            f"{nombre_encontrado} ({competitor_id}) "
+            f"[consulta {consulta_ganadora}] "
+            f"[puntaje {mejor_puntaje}]"
+        )
+
+        return competitor_id
+
+    except Exception as e:
+        print(f"❌ Error buscando equipo en 365Scores: {e}")
+        return None
+
+def obtener_resultados_365(competitor_id):
+    """Obtiene resultados finalizados de un equipo."""
+
+    try:
+        params = {
+            "appTypeId": 5,
+            "langId": 31,
+            "timezoneName": "America/Bogota",
+            "userCountryId": -1,
+            "competitors": competitor_id,
+        }
+
+        r = requests.get(
+            SCORES_URL,
+            params=params,
+            timeout=40,
+        )
+
+        if r.status_code != 200:
+            print(
+                f"⚽ 365Scores resultados {competitor_id}: "
+                f"HTTP {r.status_code}"
+            )
+            return []
+
+        data = r.json()
+        return data.get("games", [])
+
+    except Exception as e:
+        print(f"❌ Error resultados 365Scores: {e}")
+        return []
+
+
+def buscar_partido_365(apuesta):
+    """Busca el partido exacto por equipos y fecha."""
+
+    home = apuesta.get("home", "")
+    away = apuesta.get("away", "")
+
+    if not home or not away:
+        return None
+
+    fecha_base = parsear_fecha_partido(
+        apuesta.get("fecha_partido", "")
+    )
+
+    if fecha_base is None:
+        print(
+            f"⚠️ No se pudo interpretar fecha de "
+            f"{home} vs {away}"
+        )
+        return None
+
+    fecha_objetivo = fecha_base.strftime("%Y-%m-%d")
+
+    home_id = buscar_competidor_365(home)
+    away_id = buscar_competidor_365(away)
+
+    if not home_id and not away_id:
+        return None
+
+    juegos = []
+
+    if home_id:
+        juegos.extend(obtener_resultados_365(home_id))
+
+    if away_id:
+        juegos.extend(obtener_resultados_365(away_id))
+
+    vistos = set()
+
+    for game in juegos:
+        game_id = game.get("id")
+
+        if game_id in vistos:
+            continue
+
+        vistos.add(game_id)
+
+        inicio = game.get("startTime", "")
+
+        if not inicio:
+            continue
+
+        try:
+            fecha_juego = inicio[:10]
+        except Exception:
+            continue
+
+        if fecha_juego != fecha_objetivo:
+            continue
+
+        local = game.get("homeCompetitor", {}).get("name", "")
+        visitante = game.get("awayCompetitor", {}).get("name", "")
+
+        if (
+            nombres_equivalentes(home, local)
+            and nombres_equivalentes(away, visitante)
+        ):
+            print(
+                f"✅ PARTIDO ENCONTRADO 365SCORES: "
+                f"{local} vs {visitante} | "
+                f"{game.get('homeCompetitor', {}).get('score')} - "
+                f"{game.get('awayCompetitor', {}).get('score')}"
+            )
+            return game
+
+    return None
+
+
+def convertir_juego_365_a_fixture(game):
+    """Convierte el formato de 365Scores al formato usado por el bot."""
+
+    status_text = str(game.get("statusText", "")).lower()
+    status_group = game.get("statusGroup")
+
+    if status_group == 4 or status_text in {
+        "fim", "finished", "final", "ft",
+        "pós-pênaltis", "post-penalties", "after penalties"
+    }:
+        status = "FT"
+    else:
+        status = "NS"
+
+    return {
+        "fixture": {
+            "id": game.get("id"),
+            "date": game.get("startTime"),
+            "status": {
+                "short": status,
+                "long": game.get("statusText", ""),
+            },
+        },
+        "teams": {
+            "home": {
+                "name": game.get("homeCompetitor", {}).get("name", ""),
+            },
+            "away": {
+                "name": game.get("awayCompetitor", {}).get("name", ""),
+            },
+        },
+        "goals": {
+            "home": game.get("homeCompetitor", {}).get("score"),
+            "away": game.get("awayCompetitor", {}).get("score"),
+        },
+        "score": {
+            "halftime": {
+                "home": None,
+                "away": None,
+            }
+        },
+    }
+
+
+def actualizar_resultados_365():
+    """Actualiza apuestas pendientes usando 365Scores."""
+
+    apuestas = cargar_apuestas()
+    cambios = False
+
+    pendientes = [
+        a for a in apuestas
+        if a.get("resultado", "pendiente") == "pendiente"
+        and not a.get("resultado_manual", False)
+    ]
+
+    print(
+        f"🟡 Pendientes para 365Scores: {len(pendientes)}"
+    )
+
+    for apuesta in pendientes:
+
+        print(
+            f"🔎 365Scores: "
+            f"{apuesta.get('home')} vs "
+            f"{apuesta.get('away')}"
+        )
+
+        game = buscar_partido_365(apuesta)
+
+        if not game:
+            print("⏳ Partido todavía no encontrado en 365Scores")
+            continue
+
+        fixture = convertir_juego_365_a_fixture(game)
+
+        fixture_id = fixture.get("fixture", {}).get("id")
+
+        if fixture_id and apuesta.get("fixture_id") != fixture_id:
+            apuesta["fixture_id"] = fixture_id
+            cambios = True
+
+        if procesar_fixture_encontrado(apuesta, fixture):
+            cambios = True
+
+    if cambios:
+        guardar_apuestas(apuestas)
+        print("💾 signals.json actualizado mediante 365Scores")
+    else:
+        print("ℹ️ 365Scores: no hubo resultados nuevos")
+
+    return cambios
+
+
+def actualizar_resultados():
+    """365Scores es ahora la fuente principal de resultados."""
+
+    return actualizar_resultados_365()
 
 
 # ============================================================
